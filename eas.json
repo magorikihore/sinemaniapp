@@ -1,0 +1,32 @@
+{
+    "cli": {
+        "version": ">= 3.0.0"
+    },
+    "build": {
+        "preview": {
+            "distribution": "internal",
+            "android": {
+                "buildType": "apk",
+                "gradleCommand": ":app:assembleRelease"
+            },
+            "ios": {
+                "simulator": true
+            }
+        },
+        "preview-device": {
+            "distribution": "internal",
+            "ios": {
+                "simulator": false
+            }
+        },
+        "production": {
+            "android": {
+                "buildType": "app-bundle"
+            },
+            "ios": {}
+        }
+    },
+    "submit": {
+        "production": {}
+    }
+}
