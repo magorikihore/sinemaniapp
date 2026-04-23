@@ -620,24 +620,34 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
 
                 const didSwipe = Math.abs(gs.dy) > swipeThreshold && Math.abs(gs.vy) > 0.15;
                 if (didSwipe && gs.dy < -swipeThreshold) {
-                    // Swipe up → next episode (slide out up)
+                    // Swipe up → next episode (slide out up, then snap back
+                    // BEFORE switching so the new VideoView mounts on-screen)
                     Animated.timing(swipeTranslateY, {
                         toValue: -SCREEN_H,
                         duration: 250,
                         useNativeDriver: true,
                     }).start(() => {
+                        // Reset position FIRST so the next VideoStage mounts
+                        // at translateY=0 and iOS attaches its native layer
+                        // to a visible, on-screen view.
                         swipeTranslateY.setValue(0);
-                        try { nextEpisodeRef.current(); } catch {}
+                        // Defer the episode switch to the next frame to ensure
+                        // the layout has been applied before remount.
+                        requestAnimationFrame(() => {
+                            try { nextEpisodeRef.current(); } catch {}
+                        });
                     });
                 } else if (didSwipe && gs.dy > swipeThreshold) {
-                    // Swipe down → previous episode (slide out down)
+                    // Swipe down → previous episode
                     Animated.timing(swipeTranslateY, {
                         toValue: SCREEN_H,
                         duration: 250,
                         useNativeDriver: true,
                     }).start(() => {
                         swipeTranslateY.setValue(0);
-                        try { prevEpisodeRef.current(); } catch {}
+                        requestAnimationFrame(() => {
+                            try { prevEpisodeRef.current(); } catch {}
+                        });
                     });
                 } else {
                     // Snap back
@@ -1067,6 +1077,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                             key={videoUrl}
                             url={videoUrl}
                             onPlayer={setPlayer}
+                            onFirstFrame={() => setLoading(false)}
                             posterUri={posterUri}
                             loading={loading}
                         />
@@ -1696,20 +1707,21 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
 function VideoStage({
     url,
     onPlayer,
+    onFirstFrame,
     posterUri,
     loading,
 }: {
     url: string;
     onPlayer: (p: VideoPlayer | null) => void;
+    onFirstFrame: () => void;
     posterUri: string | null;
     loading: boolean;
 }) {
     const p = useVideoPlayer(url, (player) => {
         player.loop = false;
         player.timeUpdateEventInterval = 0.5;
-        // Start playback as soon as the player is created. expo-video will
-        // begin playing once the source is ready. This avoids race conditions
-        // where the parent’s statusChange listener subscribes too late.
+        // Start playback as soon as the player is created. expo-video queues
+        // play() until the source is ready.
         try { player.play(); } catch {}
     });
 
@@ -1717,6 +1729,15 @@ function VideoStage({
         onPlayer(p);
         return () => onPlayer(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [p]);
+
+    // Watchdog: if the first frame doesn't render within 1.5s, force play()
+    // again. Some iOS situations need a re-trigger.
+    useEffect(() => {
+        const t = setTimeout(() => {
+            try { p.play(); } catch {}
+        }, 1500);
+        return () => clearTimeout(t);
     }, [p]);
 
     return (
@@ -1727,6 +1748,7 @@ function VideoStage({
                 contentFit="cover"
                 nativeControls={false}
                 allowsPictureInPicture={false}
+                onFirstFrameRender={onFirstFrame}
             />
             {loading && (
                 <View pointerEvents="none" style={styles.posterOverlay}>
