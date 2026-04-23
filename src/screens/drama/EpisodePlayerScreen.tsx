@@ -953,6 +953,9 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         if (url && url !== videoUrlRef.current) {
             videoUrlRef.current = url;
             try {
+                // Pause first so iOS releases the current video track before
+                // attaching the new one — prevents black-screen-with-audio bug
+                try { player.pause(); } catch {}
                 player.replace(url);
                 // Auto-play is handled by the 'readyToPlay' status listener
             } catch (e) {
@@ -1027,6 +1030,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                         </View>
                     ) : videoUrl ? (
                         <VideoView
+                            key={videoUrl}
                             ref={videoViewRef}
                             player={player}
                             style={styles.video}
