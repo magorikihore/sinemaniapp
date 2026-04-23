@@ -4,8 +4,7 @@ import {
     Dimensions, ActivityIndicator, StatusBar, Animated, Share, Platform,
     Modal, FlatList, ScrollView, PanResponder, GestureResponderEvent, AppState,
 } from 'react-native';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { useEvent } from 'expo';
+import { useVideoPlayer, VideoView, VideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { COLORS, SPACING, STORAGE_URL } from '../../constants/config';
@@ -35,7 +34,6 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     const isVip = !!user?.is_vip;
     const hasResumed = useRef(false);
     const resumePos = useRef<number>(resumePositionMs || 0);
-    const videoViewRef = useRef<VideoView>(null);
 
     // Prevent screen recording & screenshots while player is mounted (native only)
     useEffect(() => {
@@ -97,11 +95,14 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     // Prefetched next episode data
     const prefetchedEpisodeRef = useRef<Episode | null>(null);
 
-    // expo-video player — created once, source updated via replace()
-    const player = useVideoPlayer(null as string | null, (p) => {
-        p.loop = false;
-        p.timeUpdateEventInterval = 0.5;
-    });
+    // expo-video player — owned by the <VideoStage> child component (keyed
+    // by URL) so each new episode gets a brand-new player + native VideoView.
+    // The child reports the player back via setPlayer(); the parent uses it
+    // for control (play/pause/seek/speed) and event subscriptions.
+    const [player, setPlayer] = useState<VideoPlayer | null>(null);
+    // Mirror in a ref so closures (PanResponder etc) always see the latest
+    const playerRef = useRef<VideoPlayer | null>(null);
+    useEffect(() => { playerRef.current = player; }, [player]);
 
     // Ref for preloaded video URL (warmed via HTTP range request)
     const preloadedVideoUrlRef = useRef<string | null>(null);
@@ -110,8 +111,9 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     const wasPlayingRef = useRef(false);
     useEffect(() => {
         const sub = AppState.addEventListener('change', (state) => {
+            if (!player) return;
             if (state === 'background' || state === 'inactive') {
-                wasPlayingRef.current = player.playing;
+                try { wasPlayingRef.current = player.playing; } catch {}
                 try { player.pause(); } catch {}
             } else if (state === 'active') {
                 if (wasPlayingRef.current) {
@@ -123,17 +125,25 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     }, [player]);
 
     // Track playing state from expo-video events
-    const { isPlaying: playerIsPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
-    useEffect(() => { setIsPlaying(playerIsPlaying); }, [playerIsPlaying]);
+    useEffect(() => {
+        if (!player) { setIsPlaying(false); return; }
+        try { setIsPlaying(player.playing); } catch {}
+        const sub = player.addListener('playingChange', (e: any) => {
+            setIsPlaying(!!e.isPlaying);
+        });
+        return () => sub.remove();
+    }, [player]);
 
     // Ref for saveProgress to avoid stale closures in player event listener
     const saveProgressRef = useRef<(posMs: number, durMs: number) => void>(() => {});
 
     // Track time updates
     useEffect(() => {
-        const sub = player.addListener('timeUpdate', (payload) => {
+        if (!player) return;
+        const sub = player.addListener('timeUpdate', (payload: any) => {
             const pos = (payload.currentTime || 0) * 1000; // convert to ms
-            const dur = (player.duration || 0) * 1000;
+            let dur = 0;
+            try { dur = (player.duration || 0) * 1000; } catch {}
             setPosition(pos);
             setDuration(dur);
             if (dur > 0 && Math.floor(pos / 10000) !== Math.floor((pos - 500) / 10000)) {
@@ -145,12 +155,15 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
 
     // Track status changes for loading & resume
     useEffect(() => {
-        const sub = player.addListener('statusChange', (payload) => {
+        if (!player) return;
+        // Reset resume guard for the new player so seeking still happens once.
+        hasResumed.current = false;
+        const sub = player.addListener('statusChange', (payload: any) => {
             if (payload.status === 'readyToPlay') {
                 setLoading(false);
                 if (!hasResumed.current && resumePos.current > 0) {
                     hasResumed.current = true;
-                    player.currentTime = resumePos.current / 1000; // ms to seconds
+                    try { player.currentTime = resumePos.current / 1000; } catch {}
                 }
                 // Auto-play once ready on native
                 try { player.play(); } catch {}
@@ -166,6 +179,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
 
     // Auto-play next episode when current one finishes
     useEffect(() => {
+        if (!player) return;
         const sub = player.addListener('playToEnd', () => {
             if (!isSwitchingRef.current) {
                 try { nextEpisodeRef.current(); } catch {}
@@ -416,7 +430,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     const toggleOverlay = () => {
         if (showOverlay) {
             // Overlay visible — tap plays video and hides everything
-            try { player.play(); } catch {}
+            try { player?.play(); } catch {}
             if (hideTimer.current) clearTimeout(hideTimer.current);
             Animated.timing(overlayOpacity, {
                 toValue: 0,
@@ -426,7 +440,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         } else {
             // Overlay hidden — tap pauses and shows everything
             if (isPlaying) {
-                try { player.pause(); } catch {}
+                try { player?.pause(); } catch {}
             }
             setShowOverlay(true);
             overlayOpacity.setValue(1);
@@ -468,6 +482,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     }, [episode, currentEpisodeId, locked, loading, progress, position, duration, dramaId, dramaTitle, dramaCover]);
 
     const togglePlayPause = () => {
+        if (!player) return;
         try {
             if (isPlaying) {
                 player.pause();
@@ -484,7 +499,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     };
 
     const seekBy = (deltaMs: number) => {
-        if (duration <= 0) return;
+        if (!player || duration <= 0) return;
         try {
             player.seekBy(deltaMs / 1000);
         } catch {}
@@ -492,7 +507,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     };
 
     const seekToFraction = (fraction: number) => {
-        if (duration <= 0) return;
+        if (!player || duration <= 0) return;
         try {
             const targetSec = Math.max(0, Math.min(fraction * (duration / 1000), duration / 1000));
             player.currentTime = targetSec;
@@ -535,7 +550,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                 const dur = durationRef.current;
                 if (dur > 0) {
                     const targetSec = Math.max(0, Math.min(frac * (dur / 1000), dur / 1000));
-                    try { player.currentTime = targetSec; } catch {}
+                    try { if (playerRef.current) playerRef.current.currentTime = targetSec; } catch {}
                 }
             },
             onPanResponderTerminate: () => {
@@ -808,7 +823,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     const setSpeed = (speed: number) => {
         setCurrentSpeed(speed);
         setShowSpeedModal(false);
-        try { player.playbackRate = speed; } catch {}
+        try { if (player) player.playbackRate = speed; } catch {}
         scheduleHide();
     };
 
@@ -837,8 +852,9 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
 
         if (newUrl !== videoUrlRef.current) {
             videoUrlRef.current = newUrl;
+            // Setting videoUrl re-keys <VideoStage>, mounting a fresh player
+            setLoading(true);
             setVideoUrl(newUrl);
-            try { player.replace(newUrl); } catch {}
         }
     };
 
@@ -929,14 +945,11 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     const currentEpNum = episode?.episode_number || (currentEpIndex >= 0 ? currentEpIndex + 1 : 1);
     const totalEps = episodes.length;
 
-    // Update video URL when episode changes.
-    // Two-step transition to fix iOS black-screen-with-audio bug:
-    //   1) Pause + clear videoUrl (unmounts VideoView via key={videoUrl})
-    //   2) On next tick, replace player source AND set new videoUrl together
-    //      so the VideoView remounts with a player whose source is already swapped.
+    // Update video URL when episode changes. The <VideoStage> child component
+    // is keyed by URL, so changing videoUrl unmounts the old player+VideoView
+    // and mounts a brand-new pair \u2014 fully avoiding the iOS black-screen bug.
     useEffect(() => {
         if (!episode || locked) {
-            try { player.pause(); } catch {}
             setVideoUrl(null);
             videoUrlRef.current = null;
             return;
@@ -948,7 +961,6 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         // Prefer local file (downloaded), then offline URI from nav params, then remote
         const url = localVideoUri || offlineLocalUri || remote;
 
-        // If there is truly no video URL, stop loading so the "not available" message shows
         if (!url) {
             setVideoUrl(null);
             videoUrlRef.current = null;
@@ -956,28 +968,12 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
             return;
         }
 
-        // Same URL — nothing to do
-        if (url === videoUrlRef.current) return;
-
-        videoUrlRef.current = url;
-
-        // Step 1: tear down — pause and unmount VideoView
-        try { player.pause(); } catch {}
-        setVideoUrl(null);
-        setLoading(true);
-
-        // Step 2: on next frame, replace source then mount a fresh VideoView
-        const t = setTimeout(() => {
-            try {
-                player.replace(url);
-            } catch (e) {
-                console.log('Video replace error:', e);
-            }
+        if (url !== videoUrlRef.current) {
+            videoUrlRef.current = url;
+            setLoading(true);
             setVideoUrl(url);
-        }, 60);
-
-        return () => clearTimeout(t);
-    }, [episode, locked, localVideoUri, offlineLocalUri, player]);
+        }
+    }, [episode, locked, localVideoUri, offlineLocalUri]);
 
     // Initial-load screen: only show full-screen spinner when we don't even
     // have an episode object yet. Once we have one, render the player layout
@@ -1055,36 +1051,13 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                             <Text style={styles.lockHint}>VIP members watch all episodes for free</Text>
                         </View>
                     ) : videoUrl ? (
-                        <>
-                            <VideoView
-                                key={videoUrl}
-                                ref={videoViewRef}
-                                player={player}
-                                style={styles.video}
-                                contentFit="cover"
-                                nativeControls={false}
-                                allowsPictureInPicture={false}
-                            />
-                            {/* Poster placeholder + spinner — shown over the
-                                player while the first frame is buffering. As
-                                soon as 'readyToPlay' fires, `loading` flips
-                                to false and this overlay disappears. */}
-                            {loading && (
-                                <View pointerEvents="none" style={styles.posterOverlay}>
-                                    {posterUri ? (
-                                        <Image
-                                            source={{ uri: posterUri }}
-                                            style={StyleSheet.absoluteFill}
-                                            contentFit="cover"
-                                            transition={150}
-                                        />
-                                    ) : null}
-                                    {/* Dim slightly so the spinner stays readable */}
-                                    <View style={styles.posterDim} />
-                                    <ActivityIndicator size="large" color={COLORS.primary} />
-                                </View>
-                            )}
-                        </>
+                        <VideoStage
+                            key={videoUrl}
+                            url={videoUrl}
+                            onPlayer={setPlayer}
+                            posterUri={posterUri}
+                            loading={loading}
+                        />
                     ) : (
                         <View style={styles.lockedOverlay}>
                             {posterUri ? (
@@ -1689,6 +1662,71 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                 </Animated.View>
             )}
         </View>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// VideoStage — owns the expo-video player for ONE URL.
+//
+// This component is keyed by URL in the parent, so each new episode mounts a
+// brand-new VideoStage → brand-new useVideoPlayer() → brand-new AVPlayer +
+// AVPlayerLayer pair on iOS. This is the only reliable way to avoid the
+// "black-screen-with-audio" bug where an existing player's source is swapped
+// via player.replace() but the native layer fails to re-attach to the new
+// media.
+//
+// Lifecycle:
+//   • mount   → useVideoPlayer creates new player; reports it to parent via
+//               onPlayer(p). Parent's useEffects subscribe to its events.
+//   • unmount → reports onPlayer(null) so parent drops listeners; expo-video
+//               releases the underlying AVPlayer automatically.
+// ─────────────────────────────────────────────────────────────────────────────
+function VideoStage({
+    url,
+    onPlayer,
+    posterUri,
+    loading,
+}: {
+    url: string;
+    onPlayer: (p: VideoPlayer | null) => void;
+    posterUri: string | null;
+    loading: boolean;
+}) {
+    const p = useVideoPlayer(url, (player) => {
+        player.loop = false;
+        player.timeUpdateEventInterval = 0.5;
+    });
+
+    useEffect(() => {
+        onPlayer(p);
+        return () => onPlayer(null);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [p]);
+
+    return (
+        <>
+            <VideoView
+                player={p}
+                style={styles.video}
+                contentFit="cover"
+                nativeControls={false}
+                allowsPictureInPicture={false}
+            />
+            {loading && (
+                <View pointerEvents="none" style={styles.posterOverlay}>
+                    {posterUri ? (
+                        <Image
+                            source={{ uri: posterUri }}
+                            style={StyleSheet.absoluteFill}
+                            contentFit="cover"
+                            transition={150}
+                        />
+                    ) : null}
+                    <View style={styles.posterDim} />
+                    <ActivityIndicator size="large" color={COLORS.primary} />
+                </View>
+            )}
+        </>
     );
 }
 
