@@ -1,6 +1,7 @@
 {
     "cli": {
-        "version": ">= 3.0.0"
+        "version": ">= 3.0.0",
+        "appVersionSource": "remote"
     },
     "build": {
         "preview": {
@@ -20,13 +21,21 @@
             }
         },
         "production": {
+            "autoIncrement": true,
             "android": {
                 "buildType": "app-bundle"
             },
-            "ios": {}
+            "ios": {
+                "image": "latest"
+            }
         }
     },
     "submit": {
-        "production": {}
+        "production": {
+            "ios": {
+                "ascAppId": "6763335960",
+                "appleTeamId": "GB8B46629H"
+            }
+        }
     }
 }
