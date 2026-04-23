@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, TouchableWithoutFeedback,
     Dimensions, ActivityIndicator, StatusBar, Animated, Share, Platform,
-    Modal, FlatList, ScrollView, PanResponder, GestureResponderEvent,
+    Modal, FlatList, ScrollView, PanResponder, GestureResponderEvent, AppState,
 } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useEvent } from 'expo';
@@ -15,19 +15,24 @@ import { Episode } from '../../types';
 import { useAuthStore } from '../../store/authStore';
 import { saveLastWatched, getDramaResume, clearDramaResume } from '../../components/ContinueWatchingPill';
 import { downloadEpisode, isDownloaded, getLocalUri, removeDownload } from '../../services/downloadService';
+import { parseSubtitles, findCue, SubtitleCue } from '../../utils/subtitles';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 interface Props {
     navigation: any;
-    route: { params: { dramaId: number; episodeId?: number; resumePositionMs?: number } };
+    route: { params: { dramaId: number; episodeId?: number; resumePositionMs?: number; localUri?: string; offlineTitle?: string; offlineEpisodeNumber?: number } };
 }
 
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
-const QUALITY_OPTIONS = ['Auto', '1080p', '720p', '480p', '360p'];
+const QUALITY_OPTIONS = ['Auto', '1080p', '720p', '480p'];
+// Map quality labels to HLS variant subdirectory names
+const QUALITY_VARIANT_MAP: Record<string, string> = { '1080p': 'high', '720p': 'mid', '480p': 'low' };
 
 export default function EpisodePlayerScreen({ navigation, route }: Props) {
-    const { dramaId, episodeId: initialEpisodeId, resumePositionMs } = route.params;
+    const { dramaId, episodeId: initialEpisodeId, resumePositionMs, localUri: offlineLocalUri, offlineTitle, offlineEpisodeNumber } = route.params;
     const isLoggedIn = useAuthStore((s) => s.isLoggedIn);
+    const user = useAuthStore((s) => s.user);
+    const isVip = !!user?.is_vip;
     const hasResumed = useRef(false);
     const resumePos = useRef<number>(resumePositionMs || 0);
     const videoViewRef = useRef<VideoView>(null);
@@ -78,6 +83,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     const [dramaTitle, setDramaTitle] = useState('');
     const [downloaded, setDownloaded] = useState(false);
     const [downloading, setDownloading] = useState(false);
+    const [downloadProgress, setDownloadProgress] = useState(0);
     const [localVideoUri, setLocalVideoUri] = useState<string | null>(null);
     const [dramaCover, setDramaCover] = useState<string | null>(null);
     const [dramaSynopsis, setDramaSynopsis] = useState('');
@@ -88,11 +94,33 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     const [videoUrl, setVideoUrl] = useState<string | null>(null);
     const videoUrlRef = useRef<string | null>(null);
 
+    // Prefetched next episode data
+    const prefetchedEpisodeRef = useRef<Episode | null>(null);
+
     // expo-video player — created once, source updated via replace()
     const player = useVideoPlayer(null as string | null, (p) => {
         p.loop = false;
         p.timeUpdateEventInterval = 0.5;
     });
+
+    // Ref for preloaded video URL (warmed via HTTP range request)
+    const preloadedVideoUrlRef = useRef<string | null>(null);
+
+    // Pause/resume on screen lock / app background
+    const wasPlayingRef = useRef(false);
+    useEffect(() => {
+        const sub = AppState.addEventListener('change', (state) => {
+            if (state === 'background' || state === 'inactive') {
+                wasPlayingRef.current = player.playing;
+                try { player.pause(); } catch {}
+            } else if (state === 'active') {
+                if (wasPlayingRef.current) {
+                    try { player.play(); } catch {}
+                }
+            }
+        });
+        return () => sub.remove();
+    }, [player]);
 
     // Track playing state from expo-video events
     const { isPlaying: playerIsPlaying } = useEvent(player, 'playingChange', { isPlaying: player.playing });
@@ -154,8 +182,54 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     // Modals
     const [showSpeedModal, setShowSpeedModal] = useState(false);
     const [showQualityModal, setShowQualityModal] = useState(false);
+    const [showSubtitleModal, setShowSubtitleModal] = useState(false);
     const [currentSpeed, setCurrentSpeed] = useState(1.0);
     const [currentQuality, setCurrentQuality] = useState('Auto');
+
+    // Subtitles
+    const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
+    const [activeSubtitleUrl, setActiveSubtitleUrl] = useState<string | null>(null);
+    const [currentCueText, setCurrentCueText] = useState<string>('');
+    const subtitleTracks = episode?.subtitles || [];
+
+    // Reset selected subtitle when episode changes
+    useEffect(() => {
+        setActiveSubtitleUrl(null);
+        setSubtitleCues([]);
+        setCurrentCueText('');
+    }, [currentEpisodeId]);
+
+    // Fetch + parse selected subtitle file
+    useEffect(() => {
+        if (!activeSubtitleUrl) {
+            setSubtitleCues([]);
+            setCurrentCueText('');
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch(activeSubtitleUrl);
+                const raw = await res.text();
+                if (cancelled) return;
+                setSubtitleCues(parseSubtitles(raw));
+            } catch {
+                if (!cancelled) setSubtitleCues([]);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [activeSubtitleUrl]);
+
+    // Update displayed cue based on player position
+    useEffect(() => {
+        if (!subtitleCues.length) {
+            if (currentCueText) setCurrentCueText('');
+            return;
+        }
+        const cue = findCue(subtitleCues, position);
+        const next = cue ? cue.text : '';
+        if (next !== currentCueText) setCurrentCueText(next);
+    }, [position, subtitleCues]);
 
     // Episode list & info sheet
     const [episodes, setEpisodes] = useState<Episode[]>([]);
@@ -208,16 +282,29 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                 }
             }
         } catch {
+            // If we have a local URI (offline playback), skip drama fetch — episode fetch handles it
+            if (offlineLocalUri) {
+                if (initialEpisodeId) setCurrentEpisodeId(initialEpisodeId);
+                setDramaTitle(offlineTitle || '');
+                return;
+            }
             showAlert('Error', 'Could not load drama');
             navigation.goBack();
         }
-    }, [dramaId, initialEpisodeId]);
+    }, [dramaId, initialEpisodeId, offlineLocalUri, offlineTitle]);
 
     const fetchEpisode = useCallback(async () => {
         if (!currentEpisodeId) return;
         try {
-            const res = await episodeService.getEpisode(currentEpisodeId);
-            const ep = res.data;
+            // Use prefetched data if available, otherwise fetch from API
+            let ep: Episode;
+            if (prefetchedEpisodeRef.current?.id === currentEpisodeId) {
+                ep = prefetchedEpisodeRef.current;
+                prefetchedEpisodeRef.current = null;
+            } else {
+                const res = await episodeService.getEpisode(currentEpisodeId);
+                ep = res.data;
+            }
             setEpisode(ep);
             const isLocked = !ep.is_free && !ep.is_unlocked;
             setLocked(isLocked);
@@ -228,19 +315,77 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
             // to prevent a brief "Video not available" flash during the transition.
             if (isLocked) setLoading(false);
         } catch (err) {
-            setLoading(false);
-            showAlert('Error', 'Could not load episode');
-            navigation.goBack();
+            // Offline fallback: if we have a local URI, create a minimal episode object
+            if (offlineLocalUri) {
+                const stubEpisode: Episode = {
+                    id: currentEpisodeId,
+                    drama_id: dramaId,
+                    title: offlineTitle || 'Downloaded Episode',
+                    slug: '',
+                    description: null,
+                    episode_number: offlineEpisodeNumber || 1,
+                    season_number: 1,
+                    duration: 0,
+                    video_url: null,
+                    thumbnail: null,
+                    is_free: true,
+                    coin_price: 0,
+                    view_count: 0,
+                    like_count: 0,
+                    is_active: true,
+                    published_at: null,
+                    is_unlocked: true,
+                };
+                setEpisode(stubEpisode);
+                setLocked(false);
+                setLocalVideoUri(offlineLocalUri);
+            } else {
+                setLoading(false);
+                showAlert('Error', 'Could not load episode');
+                navigation.goBack();
+            }
         } finally {
-            isSwitchingRef.current = false; // Allow next switch
+            isSwitchingRef.current = false;
         }
-    }, [currentEpisodeId]);
+    }, [currentEpisodeId, offlineLocalUri, offlineTitle, offlineEpisodeNumber]);
 
     // Fetch drama data first
     useEffect(() => { fetchDramaData(); }, [fetchDramaData]);
 
     // Then fetch episode once we have a currentEpisodeId
     useEffect(() => { if (currentEpisodeId) fetchEpisode(); }, [currentEpisodeId, fetchEpisode]);
+
+    // Prefetch next episode data AND preload video in background
+    useEffect(() => {
+        if (!currentEpisodeId || !episodes.length || loading || locked) return;
+        const sorted = [...episodes].sort((a, b) => a.episode_number - b.episode_number);
+        const idx = sorted.findIndex(e => e.id === currentEpisodeId);
+        if (idx < 0 || idx >= sorted.length - 1) return;
+        const nextId = sorted[idx + 1].id;
+
+        const preloadVideo = (ep: Episode) => {
+            const isLocked = !ep.is_free && !ep.is_unlocked;
+            if (isLocked) return;
+            const rawUrl = ep.stream_url || ep.video_url || (ep.video_path ? ep.video_path : null);
+            const url = rawUrl ? (rawUrl.startsWith('http') ? rawUrl : `${STORAGE_URL}/${rawUrl}`) : null;
+            if (url && url !== preloadedVideoUrlRef.current) {
+                preloadedVideoUrlRef.current = url;
+                // Warm CDN/HTTP cache with a small range request — Cloudflare
+                // edges the .ts segments so player.replace() is near-instant.
+                fetch(url, { method: 'GET', headers: { Range: 'bytes=0-262143' } }).catch(() => {});
+            }
+        };
+
+        if (prefetchedEpisodeRef.current?.id === nextId) {
+            // Data already prefetched, just preload the video
+            preloadVideo(prefetchedEpisodeRef.current);
+            return;
+        }
+        episodeService.getEpisode(nextId).then(res => {
+            prefetchedEpisodeRef.current = res.data;
+            preloadVideo(res.data);
+        }).catch(() => {});
+    }, [currentEpisodeId, episodes, loading, locked]);
 
     // Check watchlist
     useEffect(() => {
@@ -515,6 +660,9 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         setIsPlaying(true);
         hasResumed.current = false;
         resumePos.current = 0;
+        setLocalVideoUri(null);
+        preloadedVideoUrlRef.current = null;
+        // Keep loading true so spinner shows briefly until new video is ready
         setLoading(true);
         setEpisode(null);
         setCurrentEpisodeId(newEpisodeId);
@@ -605,6 +753,15 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         }
         if (!episode) return;
 
+        // Only VIP members can download for offline viewing
+        if (!isVip) {
+            showAlert('VIP Only', 'Offline downloads are available for VIP members only. Subscribe to VIP to download episodes and watch offline.', [
+                { text: 'Not Now', style: 'cancel' },
+                { text: 'Subscribe', onPress: () => navigation.navigate('Subscription') },
+            ]);
+            return;
+        }
+
         if (downloaded) {
             showAlert('Downloaded', 'This episode is already downloaded.', [
                 { text: 'Keep', style: 'cancel' },
@@ -618,13 +775,17 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
             return;
         }
 
-        const remoteUrl = episode.stream_url || episode.video_url || (episode.video_path ? `${STORAGE_URL}/${episode.video_path}` : null);
+        // For downloads, prefer the MP4 file (not HLS stream which is just a playlist)
+        const mp4Url = episode.video_url || (episode.video_path ? `${STORAGE_URL}/${episode.video_path}` : null);
+        // Only fall back to stream_url if it's not an HLS playlist
+        const remoteUrl = mp4Url || (episode.stream_url && !episode.stream_url.endsWith('.m3u8') ? episode.stream_url : null);
         if (!remoteUrl) {
-            showAlert('Error', 'No video URL available');
+            showAlert('Error', 'No downloadable video available');
             return;
         }
 
         setDownloading(true);
+        setDownloadProgress(0);
         try {
             await downloadEpisode(remoteUrl, {
                 episodeId: episode.id,
@@ -634,7 +795,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                 seasonNumber: episode.season_number,
                 title: episode.title || `Episode ${episode.episode_number}`,
                 thumbnail: episode.thumbnail,
-            });
+            }, (progress) => setDownloadProgress(progress));
             setDownloaded(true);
             showAlert('Downloaded', 'Episode saved for offline viewing');
         } catch (e: any) {
@@ -655,6 +816,30 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         setCurrentQuality(quality);
         setShowQualityModal(false);
         scheduleHide();
+
+        if (!episode || locked || localVideoUri || offlineLocalUri) return;
+
+        // Derive the stream base URL from the episode's stream_url (master.m3u8)
+        const streamUrl = episode.stream_url || episode.hls_url;
+        if (!streamUrl || !streamUrl.includes('master.m3u8')) return;
+
+        const baseDir = streamUrl.replace('/master.m3u8', '');
+        let newUrl: string;
+
+        if (quality === 'Auto') {
+            // Use master playlist — player adapts automatically
+            newUrl = streamUrl.startsWith('http') ? streamUrl : `${STORAGE_URL}/${streamUrl}`;
+        } else {
+            const variant = QUALITY_VARIANT_MAP[quality];
+            if (!variant) return;
+            newUrl = `${baseDir.startsWith('http') ? baseDir : `${STORAGE_URL}/${baseDir}`}/${variant}/playlist.m3u8`;
+        }
+
+        if (newUrl !== videoUrlRef.current) {
+            videoUrlRef.current = newUrl;
+            setVideoUrl(newUrl);
+            try { player.replace(newUrl); } catch {}
+        }
     };
 
     const selectEpisode = (ep: Episode) => {
@@ -755,7 +940,8 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         const remote = rawUrl
             ? (rawUrl.startsWith('http') ? rawUrl : `${STORAGE_URL}/${rawUrl}`)
             : null;
-        const url = localVideoUri || remote;
+        // Prefer local file (downloaded), then offline URI from nav params, then remote
+        const url = localVideoUri || offlineLocalUri || remote;
         setVideoUrl(url);
 
         // If there is truly no video URL, stop loading so the "not available" message shows
@@ -768,15 +954,12 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
             videoUrlRef.current = url;
             try {
                 player.replace(url);
-                // Small delay to let native player load before playing
-                setTimeout(() => {
-                    try { player.play(); } catch {}
-                }, 300);
+                // Auto-play is handled by the 'readyToPlay' status listener
             } catch (e) {
                 console.log('Video replace error:', e);
             }
         }
-    }, [episode, locked, localVideoUri, player]);
+    }, [episode, locked, localVideoUri, offlineLocalUri, player]);
 
     if (loading || !episode) {
         return (
@@ -937,22 +1120,31 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                                 <Text style={styles.sideBtnLabel}>Share</Text>
                             </TouchableOpacity>
 
-                            {/* Download */}
+                            {/* Download — VIP only */}
                             <TouchableOpacity style={styles.sideBtn} onPress={handleDownload} disabled={downloading}>
                                 {downloading ? (
                                     <View style={{ alignItems: 'center' }}>
                                         <ActivityIndicator size={24} color={COLORS.primary} />
-                                        <Text style={styles.sideBtnLabel}>Saving</Text>
+                                        <Text style={styles.sideBtnLabel}>{Math.round(downloadProgress * 100)}%</Text>
                                     </View>
                                 ) : (
-                                    <>
-                                        <Ionicons
-                                            name={downloaded ? 'checkmark-circle' : 'download-outline'}
-                                            size={28}
-                                            color={downloaded ? COLORS.coin : '#fff'}
-                                        />
-                                        <Text style={styles.sideBtnLabel}>{downloaded ? 'Saved' : 'Download'}</Text>
-                                    </>
+                                    <View style={{ alignItems: 'center' }}>
+                                        <View>
+                                            <Ionicons
+                                                name={downloaded ? 'checkmark-circle' : 'download-outline'}
+                                                size={28}
+                                                color={downloaded ? COLORS.coin : isVip ? '#fff' : '#888'}
+                                            />
+                                            {!isVip && (
+                                                <View style={styles.vipBadge}>
+                                                    <Text style={styles.vipBadgeText}>VIP</Text>
+                                                </View>
+                                            )}
+                                        </View>
+                                        <Text style={[styles.sideBtnLabel, !isVip && { color: '#888' }]}>
+                                            {downloaded ? 'Saved' : 'Download'}
+                                        </Text>
+                                    </View>
                                 )}
                             </TouchableOpacity>
 
@@ -961,6 +1153,18 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                                 <Ionicons name="speedometer-outline" size={24} color="#fff" />
                                 <Text style={styles.sideBtnLabel}>{currentSpeed}x</Text>
                             </TouchableOpacity>
+
+                            {/* Subtitles (CC) — only show if tracks exist */}
+                            {subtitleTracks.length > 0 && (
+                                <TouchableOpacity style={styles.sideBtn} onPress={() => setShowSubtitleModal(true)}>
+                                    <Ionicons
+                                        name={activeSubtitleUrl ? 'chatbubble-ellipses' : 'chatbubble-ellipses-outline'}
+                                        size={24}
+                                        color={activeSubtitleUrl ? COLORS.primary : '#fff'}
+                                    />
+                                    <Text style={styles.sideBtnLabel}>CC</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                     )}
 
@@ -1013,6 +1217,13 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                     </View>
                 </View>
             )}
+
+            {/* ── Subtitle overlay (above progress bar, behind side actions) ── */}
+            {!locked && currentCueText ? (
+                <View style={styles.subtitleOverlayWrap} pointerEvents="none">
+                    <Text style={styles.subtitleOverlayText}>{currentCueText}</Text>
+                </View>
+            ) : null}
 
             {/* ── TikTok-style progress bar (always visible, above everything) ── */}
             {!locked && (
@@ -1090,6 +1301,40 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                                             {q}
                                         </Text>
                                         {currentQuality === q && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+
+            {/* ─── SUBTITLE MODAL ─── */}
+            <Modal visible={showSubtitleModal} transparent animationType="fade" onRequestClose={() => setShowSubtitleModal(false)}>
+                <TouchableWithoutFeedback onPress={() => setShowSubtitleModal(false)}>
+                    <View style={styles.modalOverlay}>
+                        <TouchableWithoutFeedback>
+                            <View style={styles.modalSheet}>
+                                <Text style={styles.modalTitle}>Subtitles</Text>
+                                <TouchableOpacity
+                                    style={styles.modalOption}
+                                    onPress={() => { setActiveSubtitleUrl(null); setShowSubtitleModal(false); }}
+                                >
+                                    <Text style={[styles.modalOptionText, !activeSubtitleUrl && styles.modalOptionActive]}>
+                                        Off
+                                    </Text>
+                                    {!activeSubtitleUrl && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
+                                </TouchableOpacity>
+                                {subtitleTracks.map((t) => (
+                                    <TouchableOpacity
+                                        key={t.url}
+                                        style={styles.modalOption}
+                                        onPress={() => { setActiveSubtitleUrl(t.url); setShowSubtitleModal(false); }}
+                                    >
+                                        <Text style={[styles.modalOptionText, activeSubtitleUrl === t.url && styles.modalOptionActive]}>
+                                            {t.label || t.language || 'Subtitle'}
+                                        </Text>
+                                        {activeSubtitleUrl === t.url && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
                                     </TouchableOpacity>
                                 ))}
                             </View>
@@ -1472,6 +1717,20 @@ const styles = StyleSheet.create({
         textShadowOffset: { width: 0, height: 1 },
         textShadowRadius: 3,
     },
+    vipBadge: {
+        position: 'absolute',
+        top: -4,
+        right: -10,
+        backgroundColor: COLORS.primary,
+        borderRadius: 4,
+        paddingHorizontal: 3,
+        paddingVertical: 1,
+    },
+    vipBadgeText: {
+        color: '#fff',
+        fontSize: 7,
+        fontWeight: '800',
+    },
 
     // Right side actions (TikTok style - always visible when not locked)
     rightActions: {
@@ -1521,6 +1780,28 @@ const styles = StyleSheet.create({
         bottom: 0, left: 0, right: 0,
         zIndex: 9999,
         elevation: 9999,
+    },
+
+    // Subtitle overlay
+    subtitleOverlayWrap: {
+        position: 'absolute',
+        bottom: 90, left: 16, right: 90,
+        zIndex: 9997,
+        elevation: 9997,
+        alignItems: 'center',
+    },
+    subtitleOverlayText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
+        textAlign: 'center',
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 4,
+        textShadowColor: 'rgba(0,0,0,0.95)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
     },
 
     // Always-visible bottom info (TikTok/Shorts style)

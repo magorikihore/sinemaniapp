@@ -19,6 +19,7 @@ interface Props {
 
 export default function HomeScreen({ navigation }: Props) {
     const [banners, setBanners] = useState<Banner[]>([]);
+    const [upcoming, setUpcoming] = useState<Drama[]>([]);
     const [featured, setFeatured] = useState<Drama[]>([]);
     const [trending, setTrending] = useState<Drama[]>([]);
     const [newReleases, setNewReleases] = useState<Drama[]>([]);
@@ -38,6 +39,7 @@ export default function HomeScreen({ navigation }: Props) {
             ]);
             const home = homeRes.data;
             setBanners(home?.banners || []);
+            setUpcoming(home?.upcoming || []);
             setFeatured(home?.featured || []);
             setTrending(trendingRes.data?.data || trendingRes.data || []);
             setNewReleases(newRes.data?.data || newRes.data || []);
@@ -101,7 +103,9 @@ export default function HomeScreen({ navigation }: Props) {
                         <TouchableOpacity
                             key={b.id}
                             activeOpacity={0.9}
-                            onPress={() => b.drama_id && openDrama(b.drama_id)}
+                            onPress={() => {
+                                if (b.link_type === 'drama' && b.link_value) openDrama(Number(b.link_value));
+                            }}
                             style={styles.bannerWrap}
                         >
                             <Image
@@ -119,6 +123,43 @@ export default function HomeScreen({ navigation }: Props) {
                         </TouchableOpacity>
                     ))}
                 </ScrollView>
+            )}
+
+            {/* Upcoming / Coming Soon */}
+            {upcoming.length > 0 && (
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>🎬 Coming Soon</Text>
+                    <FlatList
+                        data={upcoming}
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        keyExtractor={(item) => `upcoming-${item.id}`}
+                        contentContainerStyle={{ paddingHorizontal: SPACING.md }}
+                        ItemSeparatorComponent={() => <View style={{ width: SPACING.sm }} />}
+                        renderItem={({ item }) => (
+                            <TouchableOpacity
+                                activeOpacity={0.85}
+                                onPress={() => openDrama(item.id)}
+                                style={styles.upcomingCard}
+                            >
+                                <Image
+                                    source={{ uri: item.cover_image ? `${STORAGE_URL}/${item.cover_image}` : 'https://via.placeholder.com/200x280' }}
+                                    style={styles.upcomingPoster}
+                                    contentFit="cover"
+                                />
+                                <LinearGradient
+                                    colors={['transparent', 'rgba(0,0,0,0.9)']}
+                                    style={styles.upcomingGradient}
+                                >
+                                    <View style={styles.comingSoonBadge}>
+                                        <Text style={styles.comingSoonText}>COMING SOON</Text>
+                                    </View>
+                                    <Text style={styles.upcomingTitle} numberOfLines={2}>{item.title}</Text>
+                                </LinearGradient>
+                            </TouchableOpacity>
+                        )}
+                    />
+                </View>
             )}
 
             {/* Continue Watching */}
@@ -243,6 +284,13 @@ const styles = StyleSheet.create({
     // Section
     section: { marginTop: SPACING.lg },
     sectionTitle: { color: COLORS.text, fontSize: 18, fontWeight: '700', marginLeft: SPACING.md, marginBottom: SPACING.sm },
+    // Upcoming / Coming Soon
+    upcomingCard: { width: 150, height: 220, borderRadius: 10, overflow: 'hidden' },
+    upcomingPoster: { width: '100%', height: '100%' },
+    upcomingGradient: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 10, paddingTop: 30 },
+    comingSoonBadge: { backgroundColor: COLORS.primary, alignSelf: 'flex-start', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, marginBottom: 4 },
+    comingSoonText: { color: '#fff', fontSize: 8, fontWeight: '800', letterSpacing: 0.5 },
+    upcomingTitle: { color: '#fff', fontSize: 13, fontWeight: '700' },
     // Drama card
     poster: { width: 130, height: 195, borderRadius: 8 },
     dramaTitle: { color: COLORS.text, fontSize: 12, marginTop: 6, width: 130 },

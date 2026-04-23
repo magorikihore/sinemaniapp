@@ -37,14 +37,14 @@ api.interceptors.response.use(
             await storage.deleteItem('user');
         }
 
-        // Network error (no internet, DNS failure, timeout)
+        // Network error (no internet, DNS failure, SSL failure, timeout)
         const now = Date.now();
         if (!error.response && (error.message === 'Network Error' || error.code === 'ERR_NETWORK')) {
             if (now - _lastNetworkAlertTime > NETWORK_ALERT_COOLDOWN) {
                 _lastNetworkAlertTime = now;
                 showAlert(
-                    'No Internet Connection',
-                    'Please check your internet connection and try again. Make sure you are connected to Wi-Fi or mobile data.',
+                    'Connection Error',
+                    'Unable to reach the server. This could be a network issue or the server may be temporarily unavailable. Please try again later.',
                     [{ text: 'OK' }],
                     'error',
                 );

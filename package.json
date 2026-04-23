@@ -18,7 +18,6 @@
     "axios": "^1.13.6",
     "expo": "~55.0.5",
     "expo-application": "~55.0.8",
-    "expo-av": "^16.0.8",
     "expo-constants": "~55.0.7",
     "expo-dev-client": "~55.0.16",
     "expo-device": "~55.0.9",

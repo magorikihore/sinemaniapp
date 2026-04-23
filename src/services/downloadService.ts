@@ -1,4 +1,5 @@
 import { Paths, File, Directory } from 'expo-file-system';
+import * as LegacyFS from 'expo-file-system/legacy';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
@@ -66,7 +67,7 @@ export async function getLocalUri(episodeId: number): Promise<string | null> {
     return item.localUri;
 }
 
-/** Download an episode video */
+/** Download an episode video (resumable, background-safe) */
 export async function downloadEpisode(
     videoUrl: string,
     meta: {
@@ -78,6 +79,7 @@ export async function downloadEpisode(
         title: string;
         thumbnail: string | null;
     },
+    onProgress?: (progress: number) => void,
 ): Promise<DownloadedEpisode> {
     if (Platform.OS === 'web') {
         throw new Error('Downloads are not available on web');
@@ -94,7 +96,28 @@ export async function downloadEpisode(
         destFile.delete();
     }
 
-    const downloaded = await File.downloadFileAsync(videoUrl, destFile);
+    // Use legacy resumable download for large files — handles background + no socket timeout
+    const downloadResumable = LegacyFS.createDownloadResumable(
+        videoUrl,
+        destFile.uri,
+        {},
+        onProgress
+            ? (data) => {
+                  if (data.totalBytesExpectedToWrite > 0) {
+                      onProgress(data.totalBytesWritten / data.totalBytesExpectedToWrite);
+                  }
+              }
+            : undefined,
+    );
+
+    const result = await downloadResumable.downloadAsync();
+    if (!result?.uri) {
+        throw new Error('Download failed — no file returned');
+    }
+
+    // Get file size
+    const info = await LegacyFS.getInfoAsync(result.uri);
+    const fileSize = (info as any).size ?? 0;
 
     const record: DownloadedEpisode = {
         episodeId: meta.episodeId,
@@ -104,8 +127,8 @@ export async function downloadEpisode(
         seasonNumber: meta.seasonNumber,
         title: meta.title,
         thumbnail: meta.thumbnail,
-        localUri: downloaded.uri,
-        fileSize: downloaded.size ?? 0,
+        localUri: result.uri,
+        fileSize,
         downloadedAt: Date.now(),
     };
 

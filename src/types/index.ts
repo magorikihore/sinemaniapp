@@ -62,6 +62,7 @@ export interface Episode {
     video_url: string | null;
     video_path?: string | null;
     stream_url?: string | null;
+    hls_url?: string | null;
     thumbnail: string | null;
     is_free: boolean;
     coin_price: number;
@@ -75,6 +76,7 @@ export interface Episode {
     is_unlocked?: boolean;
     is_liked?: boolean;
     watch_progress?: number;
+    subtitles?: { language: string; label: string; url: string; format?: 'srt' | 'vtt' }[];
 }
 
 export interface Category {
@@ -219,6 +221,7 @@ export interface HomeData {
     featured: Drama[];
     trending: Drama[];
     new_releases: Drama[];
+    upcoming: Drama[];
     categories: Category[];
     for_you: Drama[];
 }

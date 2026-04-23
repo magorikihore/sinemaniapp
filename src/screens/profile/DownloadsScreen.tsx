@@ -44,6 +44,9 @@ export default function DownloadsScreen({ navigation }: any) {
         navigation.navigate('EpisodePlayer', {
             dramaId: item.dramaId,
             episodeId: item.episodeId,
+            localUri: item.localUri,
+            offlineTitle: item.dramaTitle,
+            offlineEpisodeNumber: item.episodeNumber,
         });
     };
 

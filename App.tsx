@@ -1,6 +1,23 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
+
+// ─── Global font scale: bump every fontSize/lineHeight by 15% for better readability ───
+const FONT_SCALE = 1.15;
+const __origCreate = StyleSheet.create;
+(StyleSheet as any).create = (styles: any) => {
+    const out: any = {};
+    for (const key of Object.keys(styles)) {
+        const s = { ...styles[key] };
+        if (typeof s.fontSize === 'number') s.fontSize = Math.round(s.fontSize * FONT_SCALE);
+        if (typeof s.lineHeight === 'number') s.lineHeight = Math.round(s.lineHeight * FONT_SCALE);
+        out[key] = s;
+    }
+    return __origCreate(out);
+};
+// Default Text size if no style provided
+(Text as any).defaultProps = (Text as any).defaultProps || {};
+(Text as any).defaultProps.style = [{ fontSize: Math.round(14 * FONT_SCALE) }, ((Text as any).defaultProps.style)];
 import { NavigationContainer, DefaultTheme, NavigationContainerRef } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
