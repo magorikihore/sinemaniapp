@@ -699,6 +699,14 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         resumePos.current = 0;
         setLocalVideoUri(null);
         preloadedVideoUrlRef.current = null;
+        // CRITICAL: clear videoUrl so VideoStage UNMOUNTS its AVPlayer fully
+        // before the new episode loads. Otherwise the videoUrl effect fires
+        // twice (once with stale OLD url, once with NEW), causing two AVPlayer
+        // instances to fight over the iOS audio session → black screen + no
+        // sound on iPhone. With null, VideoStage is removed from the tree and
+        // only mounts once after the new URL is set.
+        setVideoUrl(null);
+        videoUrlRef.current = null;
         // Keep loading true so spinner shows briefly until new video is ready
         setLoading(true);
         setEpisode(null);
