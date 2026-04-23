@@ -158,15 +158,27 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         if (!player) return;
         // Reset resume guard for the new player so seeking still happens once.
         hasResumed.current = false;
+
+        const handleReady = () => {
+            setLoading(false);
+            if (!hasResumed.current && resumePos.current > 0) {
+                hasResumed.current = true;
+                try { player.currentTime = resumePos.current / 1000; } catch {}
+            }
+            try { player.play(); } catch {}
+        };
+
+        // The player may have already become ready before this listener was
+        // attached (mount happens fast; HLS is sometimes instant). Check
+        // synchronously and act if already ready.
+        try {
+            const s = (player as any).status;
+            if (s === 'readyToPlay') handleReady();
+        } catch {}
+
         const sub = player.addListener('statusChange', (payload: any) => {
             if (payload.status === 'readyToPlay') {
-                setLoading(false);
-                if (!hasResumed.current && resumePos.current > 0) {
-                    hasResumed.current = true;
-                    try { player.currentTime = resumePos.current / 1000; } catch {}
-                }
-                // Auto-play once ready on native
-                try { player.play(); } catch {}
+                handleReady();
             } else if (payload.status === 'loading') {
                 // Still loading, keep spinner visible
             } else if (payload.status === 'error') {
@@ -1695,6 +1707,10 @@ function VideoStage({
     const p = useVideoPlayer(url, (player) => {
         player.loop = false;
         player.timeUpdateEventInterval = 0.5;
+        // Start playback as soon as the player is created. expo-video will
+        // begin playing once the source is ready. This avoids race conditions
+        // where the parent’s statusChange listener subscribes too late.
+        try { player.play(); } catch {}
     });
 
     useEffect(() => {
