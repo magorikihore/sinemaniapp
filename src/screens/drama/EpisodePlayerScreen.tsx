@@ -929,9 +929,14 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     const currentEpNum = episode?.episode_number || (currentEpIndex >= 0 ? currentEpIndex + 1 : 1);
     const totalEps = episodes.length;
 
-    // Update video URL when episode changes — use player.replace() for native
+    // Update video URL when episode changes.
+    // Two-step transition to fix iOS black-screen-with-audio bug:
+    //   1) Pause + clear videoUrl (unmounts VideoView via key={videoUrl})
+    //   2) On next tick, replace player source AND set new videoUrl together
+    //      so the VideoView remounts with a player whose source is already swapped.
     useEffect(() => {
         if (!episode || locked) {
+            try { player.pause(); } catch {}
             setVideoUrl(null);
             videoUrlRef.current = null;
             return;
@@ -942,26 +947,36 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
             : null;
         // Prefer local file (downloaded), then offline URI from nav params, then remote
         const url = localVideoUri || offlineLocalUri || remote;
-        setVideoUrl(url);
 
         // If there is truly no video URL, stop loading so the "not available" message shows
         if (!url) {
+            setVideoUrl(null);
+            videoUrlRef.current = null;
             setLoading(false);
             return;
         }
 
-        if (url && url !== videoUrlRef.current) {
-            videoUrlRef.current = url;
+        // Same URL — nothing to do
+        if (url === videoUrlRef.current) return;
+
+        videoUrlRef.current = url;
+
+        // Step 1: tear down — pause and unmount VideoView
+        try { player.pause(); } catch {}
+        setVideoUrl(null);
+        setLoading(true);
+
+        // Step 2: on next frame, replace source then mount a fresh VideoView
+        const t = setTimeout(() => {
             try {
-                // Pause first so iOS releases the current video track before
-                // attaching the new one — prevents black-screen-with-audio bug
-                try { player.pause(); } catch {}
                 player.replace(url);
-                // Auto-play is handled by the 'readyToPlay' status listener
             } catch (e) {
                 console.log('Video replace error:', e);
             }
-        }
+            setVideoUrl(url);
+        }, 60);
+
+        return () => clearTimeout(t);
     }, [episode, locked, localVideoUri, offlineLocalUri, player]);
 
     if (loading || !episode) {

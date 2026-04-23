@@ -156,12 +156,12 @@ const styles = StyleSheet.create({
     searchBtnText: { fontSize: 18 },
     // Chips
     chip: {
-        paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-        backgroundColor: COLORS.surface, marginRight: SPACING.xs, borderWidth: 1, borderColor: COLORS.border,
+        paddingHorizontal: 18, paddingVertical: 10, borderRadius: 22,
+        backgroundColor: COLORS.surfaceLight, marginRight: SPACING.sm, borderWidth: 1.5, borderColor: COLORS.border,
     },
-    chipActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-    chipText: { color: COLORS.textSecondary, fontSize: 13 },
-    chipTextActive: { color: '#fff', fontWeight: '600' },
+    chipActive: { backgroundColor: '#FFFFFF', borderColor: '#FFFFFF' },
+    chipText: { color: COLORS.text, fontSize: 15, fontWeight: '600' },
+    chipTextActive: { color: '#000000', fontWeight: '700' },
     // Grid
     card: { width: POSTER_W, marginBottom: SPACING.md },
     poster: { width: POSTER_W, height: POSTER_W * 1.5, borderRadius: 8 },
