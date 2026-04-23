@@ -690,7 +690,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     const switchEpisode = useCallback((newEpisodeId: number) => {
         if (isSwitchingRef.current) return; // Prevent double-switch
         isSwitchingRef.current = true;
-        // Reset playback state — source will update via useEffect when episode loads
+        // Reset playback state — source will swap via VideoStage's replaceAsync
         setPosition(0);
         setDuration(0);
         setProgress(0);
@@ -699,14 +699,6 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         resumePos.current = 0;
         setLocalVideoUri(null);
         preloadedVideoUrlRef.current = null;
-        // CRITICAL: clear videoUrl so VideoStage UNMOUNTS its AVPlayer fully
-        // before the new episode loads. Otherwise the videoUrl effect fires
-        // twice (once with stale OLD url, once with NEW), causing two AVPlayer
-        // instances to fight over the iOS audio session → black screen + no
-        // sound on iPhone. With null, VideoStage is removed from the tree and
-        // only mounts once after the new URL is set.
-        setVideoUrl(null);
-        videoUrlRef.current = null;
         // Keep loading true so spinner shows briefly until new video is ready
         setLoading(true);
         setEpisode(null);
@@ -1080,28 +1072,14 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                             </TouchableOpacity>
                             <Text style={styles.lockHint}>VIP members watch all episodes for free</Text>
                         </View>
-                    ) : videoUrl ? (
+                    ) : (
                         <VideoStage
-                            key={videoUrl}
                             url={videoUrl}
                             onPlayer={setPlayer}
                             onFirstFrame={() => setLoading(false)}
                             posterUri={posterUri}
-                            loading={loading}
+                            loading={loading || !videoUrl}
                         />
-                    ) : (
-                        <View style={styles.lockedOverlay}>
-                            {posterUri ? (
-                                <Image
-                                    source={{ uri: posterUri }}
-                                    style={StyleSheet.absoluteFill}
-                                    contentFit="cover"
-                                    transition={150}
-                                />
-                            ) : null}
-                            <View style={styles.posterDim} />
-                            <ActivityIndicator size="large" color={COLORS.primary} />
-                        </View>
                     )}
 
                     {/* ─── GESTURE CATCHER — sits on top of VideoView to capture taps & swipes ─── */}
@@ -1697,20 +1675,12 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// VideoStage — owns the expo-video player for ONE URL.
-//
-// This component is keyed by URL in the parent, so each new episode mounts a
-// brand-new VideoStage → brand-new useVideoPlayer() → brand-new AVPlayer +
-// AVPlayerLayer pair on iOS. This is the only reliable way to avoid the
-// "black-screen-with-audio" bug where an existing player's source is swapped
-// via player.replace() but the native layer fails to re-attach to the new
-// media.
-//
-// Lifecycle:
-//   • mount   → useVideoPlayer creates new player; reports it to parent via
-//               onPlayer(p). Parent's useEffects subscribe to its events.
-//   • unmount → reports onPlayer(null) so parent drops listeners; expo-video
-//               releases the underlying AVPlayer automatically.
+// VideoStage — owns ONE persistent expo-video player for the entire screen
+// lifetime. When the URL prop changes, calls player.replaceAsync(newUrl) to
+// swap the source. This avoids the iOS black-screen bug that happens when a
+// VideoView is unmounted and remounted in quick succession (the new
+// AVPlayerLayer fails to attach reliably). Single AVPlayer + replaceAsync is
+// the official documented pattern in expo-video.
 // ─────────────────────────────────────────────────────────────────────────────
 function VideoStage({
     url,
@@ -1719,34 +1689,41 @@ function VideoStage({
     posterUri,
     loading,
 }: {
-    url: string;
+    url: string | null;
     onPlayer: (p: VideoPlayer | null) => void;
     onFirstFrame: () => void;
     posterUri: string | null;
     loading: boolean;
 }) {
-    const p = useVideoPlayer(url, (player) => {
+    // Create the player ONCE with a null source. Source will be supplied
+    // via replaceAsync below whenever url changes.
+    const p = useVideoPlayer(null, (player) => {
         player.loop = false;
         player.timeUpdateEventInterval = 0.5;
-        // Start playback as soon as the player is created. expo-video queues
-        // play() until the source is ready.
-        try { player.play(); } catch {}
     });
 
+    // Report player to parent (and clear on unmount)
     useEffect(() => {
         onPlayer(p);
         return () => onPlayer(null);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [p]);
 
-    // Watchdog: if the first frame doesn't render within 1.5s, force play()
-    // again. Some iOS situations need a re-trigger.
+    // Whenever url changes, swap the source asynchronously and start playback.
     useEffect(() => {
-        const t = setTimeout(() => {
-            try { p.play(); } catch {}
-        }, 1500);
-        return () => clearTimeout(t);
-    }, [p]);
+        if (!url) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                await p.replaceAsync(url);
+                if (cancelled) return;
+                try { p.play(); } catch {}
+            } catch (e) {
+                console.log('VideoStage replaceAsync error:', e);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [p, url]);
 
     return (
         <>
