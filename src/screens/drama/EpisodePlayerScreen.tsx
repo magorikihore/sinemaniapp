@@ -979,7 +979,10 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         return () => clearTimeout(t);
     }, [episode, locked, localVideoUri, offlineLocalUri, player]);
 
-    if (loading || !episode) {
+    // Initial-load screen: only show full-screen spinner when we don't even
+    // have an episode object yet. Once we have one, render the player layout
+    // with a poster placeholder so the user sees content immediately.
+    if (!episode) {
         return (
             <View style={styles.center}>
                 <StatusBar hidden />
@@ -987,6 +990,14 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
             </View>
         );
     }
+
+    // Poster shown behind/over the video while it's buffering (first frame
+    // not yet rendered). Episode thumbnail is preferred, falls back to drama
+    // cover. Built as a full HTTPS URL.
+    const posterRaw = episode.thumbnail || dramaCover || null;
+    const posterUri = posterRaw
+        ? (posterRaw.startsWith('http') ? posterRaw : `${STORAGE_URL}/${posterRaw}`)
+        : null;
 
     return (
         <View style={styles.container}>
@@ -1044,19 +1055,48 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                             <Text style={styles.lockHint}>VIP members watch all episodes for free</Text>
                         </View>
                     ) : videoUrl ? (
-                        <VideoView
-                            key={videoUrl}
-                            ref={videoViewRef}
-                            player={player}
-                            style={styles.video}
-                            contentFit="cover"
-                            nativeControls={false}
-                            allowsPictureInPicture={false}
-                        />
+                        <>
+                            <VideoView
+                                key={videoUrl}
+                                ref={videoViewRef}
+                                player={player}
+                                style={styles.video}
+                                contentFit="cover"
+                                nativeControls={false}
+                                allowsPictureInPicture={false}
+                            />
+                            {/* Poster placeholder + spinner — shown over the
+                                player while the first frame is buffering. As
+                                soon as 'readyToPlay' fires, `loading` flips
+                                to false and this overlay disappears. */}
+                            {loading && (
+                                <View pointerEvents="none" style={styles.posterOverlay}>
+                                    {posterUri ? (
+                                        <Image
+                                            source={{ uri: posterUri }}
+                                            style={StyleSheet.absoluteFill}
+                                            contentFit="cover"
+                                            transition={150}
+                                        />
+                                    ) : null}
+                                    {/* Dim slightly so the spinner stays readable */}
+                                    <View style={styles.posterDim} />
+                                    <ActivityIndicator size="large" color={COLORS.primary} />
+                                </View>
+                            )}
+                        </>
                     ) : (
                         <View style={styles.lockedOverlay}>
-                            <Ionicons name="videocam-off" size={48} color={COLORS.textMuted} />
-                            <Text style={styles.lockDesc}>Video not available</Text>
+                            {posterUri ? (
+                                <Image
+                                    source={{ uri: posterUri }}
+                                    style={StyleSheet.absoluteFill}
+                                    contentFit="cover"
+                                    transition={150}
+                                />
+                            ) : null}
+                            <View style={styles.posterDim} />
+                            <ActivityIndicator size="large" color={COLORS.primary} />
                         </View>
                     )}
 
@@ -1659,6 +1699,18 @@ const styles = StyleSheet.create({
     // Video — fill entire screen vertically
     videoContainer: { flex: 1, backgroundColor: '#000', width: SCREEN_W, height: SCREEN_H },
     video: { width: '100%', height: '100%' },
+
+    // Poster placeholder shown over the player while the first frame is buffering
+    posterOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#000',
+    },
+    posterDim: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+    },
 
     // Swipe hint — centered on screen
     swipeHintWrap: {
