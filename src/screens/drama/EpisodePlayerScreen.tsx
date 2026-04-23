@@ -1700,6 +1700,11 @@ function VideoStage({
     const p = useVideoPlayer(null, (player) => {
         player.loop = false;
         player.timeUpdateEventInterval = 0.5;
+        player.muted = false;
+        player.volume = 1.0;
+        // 'doNotMix' guarantees we own the iOS audio session so audio
+        // is reliably routed even after replaceAsync source swaps.
+        try { (player as any).audioMixingMode = 'doNotMix'; } catch {}
     });
 
     // Report player to parent (and clear on unmount)
@@ -1715,8 +1720,13 @@ function VideoStage({
         let cancelled = false;
         (async () => {
             try {
+                // Pause first so the audio session isn't held by the previous
+                // source while iOS swaps. Then load + play the new source.
+                try { p.pause(); } catch {}
                 await p.replaceAsync(url);
                 if (cancelled) return;
+                p.muted = false;
+                p.volume = 1.0;
                 try { p.play(); } catch {}
             } catch (e) {
                 console.log('VideoStage replaceAsync error:', e);
@@ -1727,7 +1737,12 @@ function VideoStage({
 
     return (
         <>
+            {/* key={url} forces iOS to attach a FRESH AVPlayerLayer to the
+                (still-alive) player on every episode change. Without this,
+                the old layer keeps showing the last frame (or black) even
+                after replaceAsync swaps the source. */}
             <VideoView
+                key={url || 'empty'}
                 player={p}
                 style={styles.video}
                 contentFit="cover"
