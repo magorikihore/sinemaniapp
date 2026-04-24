@@ -48,6 +48,16 @@ export const authService = {
         return api.put('/v1/auth/fcm-token', { fcm_token });
     },
 
+    async forgotPassword(email: string) {
+        const res = await api.post('/auth/forgot-password', { email });
+        return res.data;
+    },
+
+    async resetPassword(data: { email: string; code: string; password: string; password_confirmation: string }) {
+        const res = await api.post('/auth/reset-password', data);
+        return res.data;
+    },
+
     async getStoredUser(): Promise<User | null> {
         const json = await storage.getItem('user');
         return json ? JSON.parse(json) : null;

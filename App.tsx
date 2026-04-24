@@ -61,19 +61,53 @@ export default function App() {
 
   // Handle notification taps (navigate to relevant screen)
   useEffect(() => {
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      const data = response.notification.request.content.data;
-      if (!navigationRef.current) return;
+    const handleData = (data: any) => {
+      if (!navigationRef.current || !data) return;
+      const nav = navigationRef.current;
 
-      if (data?.type === 'new_episode' && data?.drama_id) {
-        navigationRef.current.navigate('DramaDetail', { dramaId: Number(data.drama_id) });
-      } else if (data?.type === 'daily_reward') {
-        navigationRef.current.navigate('DailyReward');
-      } else if (data?.type === 'promo') {
-        if (data?.action_value) {
-          navigationRef.current.navigate('DramaDetail', { dramaId: Number(data.action_value) });
+      // Marketing broadcast CTAs (from admin Marketing & Push panel)
+      if (data.type === 'marketing' && data.cta_type) {
+        switch (data.cta_type) {
+          case 'drama':
+            if (data.cta_value) nav.navigate('DramaDetail', { dramaId: Number(data.cta_value) });
+            return;
+          case 'coin_store':
+            nav.navigate('CoinStore');
+            return;
+          case 'subscription':
+            nav.navigate('Subscription');
+            return;
+          case 'daily_reward':
+            nav.navigate('DailyReward');
+            return;
         }
+        return; // marketing with no cta = just open app
       }
+
+      // Referral reward push
+      if (data.type === 'referral') {
+        nav.navigate('MainTabs', { screen: 'Profile' });
+        return;
+      }
+
+      // Legacy types
+      if (data.type === 'new_episode' && data.drama_id) {
+        nav.navigate('DramaDetail', { dramaId: Number(data.drama_id) });
+      } else if (data.type === 'daily_reward') {
+        nav.navigate('DailyReward');
+      } else if (data.type === 'promo' && data.action_value) {
+        nav.navigate('DramaDetail', { dramaId: Number(data.action_value) });
+      }
+    };
+
+    // Tapped a notification while app was open / backgrounded
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      handleData(response.notification.request.content.data);
+    });
+
+    // App was launched cold by tapping a notification
+    Notifications.getLastNotificationResponseAsync().then((response) => {
+      if (response) handleData(response.notification.request.content.data);
     });
 
     return () => sub.remove();

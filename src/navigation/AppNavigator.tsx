@@ -15,6 +15,7 @@ import DramaDetailScreen from '../screens/drama/DramaDetailScreen';
 import EpisodePlayerScreen from '../screens/drama/EpisodePlayerScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 import SettingsScreen from '../screens/profile/SettingsScreen';
 import WatchHistoryScreen from '../screens/profile/WatchHistoryScreen';
 import NotificationsScreen from '../screens/profile/NotificationsScreen';
@@ -31,6 +32,7 @@ export type RootStackParamList = {
     EpisodePlayer: { dramaId: number; episodeId?: number; resumePositionMs?: number };
     Login: undefined;
     Register: undefined;
+    ForgotPassword: { email?: string } | undefined;
     Settings: undefined;
     WatchHistory: undefined;
     Downloads: undefined;
@@ -115,6 +117,7 @@ export function AppNavigator() {
             />
             <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: true, title: 'Login', presentation: 'modal' }} />
             <Stack.Screen name="Register" component={RegisterScreen} options={{ headerShown: true, title: 'Create Account', presentation: 'modal' }} />
+            <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} options={{ headerShown: true, title: 'Reset Password', presentation: 'modal' }} />
             <Stack.Screen name="Settings" component={SettingsScreen} options={{ headerShown: true, title: 'Settings' }} />
             <Stack.Screen name="WatchHistory" component={WatchHistoryScreen} options={{ headerShown: true, title: 'Watch History' }} />
             <Stack.Screen name="Downloads" component={DownloadsScreen} options={{ headerShown: true, title: 'Downloads' }} />
