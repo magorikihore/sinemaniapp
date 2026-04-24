@@ -1217,8 +1217,8 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
 
                 </View>
 
-            {/* Swipe hint */}
-            {swipeHint && (
+            {/* Swipe hint — only shown on the first episode as an onboarding cue */}
+            {swipeHint && currentEpNum === 1 && (
                 <View style={styles.swipeHintWrap}>
                     <Ionicons
                         name={swipeHint === 'up' ? 'chevron-up' : 'chevron-down'}
@@ -1756,21 +1756,47 @@ function VideoStage({
                 allowsPictureInPicture={false}
                 onFirstFrameRender={onFirstFrame}
             />
-            {loading && (
+            {loading && posterUri && (
                 <View pointerEvents="none" style={styles.posterOverlay}>
-                    {posterUri ? (
-                        <Image
-                            source={{ uri: posterUri }}
-                            style={StyleSheet.absoluteFill}
-                            contentFit="cover"
-                            transition={150}
-                        />
-                    ) : null}
+                    <Image
+                        source={{ uri: posterUri }}
+                        style={StyleSheet.absoluteFill}
+                        contentFit="cover"
+                        transition={150}
+                    />
                     <View style={styles.posterDim} />
-                    <ActivityIndicator size="large" color={COLORS.primary} />
                 </View>
             )}
+            {loading && <LoadingBar />}
         </>
+    );
+}
+
+// TikTok-style indeterminate loading bar pinned to the bottom of the video.
+function LoadingBar() {
+    const anim = useRef(new Animated.Value(0)).current;
+    useEffect(() => {
+        anim.setValue(0);
+        const loop = Animated.loop(
+            Animated.timing(anim, {
+                toValue: 1,
+                duration: 1100,
+                useNativeDriver: true,
+            })
+        );
+        loop.start();
+        return () => loop.stop();
+    }, [anim]);
+    const translateX = anim.interpolate({
+        inputRange: [0, 1],
+        outputRange: [-SCREEN_W * 0.4, SCREEN_W],
+    });
+    return (
+        <View pointerEvents="none" style={styles.loadingBarTrack}>
+            <Animated.View
+                style={[styles.loadingBarFill, { transform: [{ translateX }] }]}
+            />
+        </View>
     );
 }
 
@@ -1792,6 +1818,25 @@ const styles = StyleSheet.create({
     posterDim: {
         ...StyleSheet.absoluteFillObject,
         backgroundColor: 'rgba(0,0,0,0.45)',
+    },
+
+    // TikTok-style loading bar — thin moving line at the bottom of the video
+    loadingBarTrack: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        height: 2.5,
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        overflow: 'hidden',
+    },
+    loadingBarFill: {
+        position: 'absolute',
+        top: 0,
+        bottom: 0,
+        width: '40%',
+        backgroundColor: COLORS.primary,
+        borderRadius: 2,
     },
 
     // Swipe hint — centered on screen
