@@ -139,6 +139,13 @@ export default function ProfileScreen({ navigation }: Props) {
                     subtitle="Claim free coins daily"
                     onPress={() => navigation.navigate('DailyReward')}
                 />
+                <MenuItem
+                    icon="people-outline"
+                    label="Invite Friends"
+                    subtitle="Earn coins for every friend who joins"
+                    onPress={() => navigation.navigate('Referral')}
+                    accent={COLORS.success}
+                />
             </View>
 
             <View style={styles.menuSection}>

@@ -280,3 +280,13 @@ export const reportService = {
         return api.post('/v1/reports', data);
     },
 };
+
+// ── Referral ───────────────────────────────────────────────
+export const referralService = {
+    async getMine() {
+        return api.get('/v1/referral');
+    },
+    async apply(code: string) {
+        return api.post('/v1/referral/apply', { code });
+    },
+};

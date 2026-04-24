@@ -41,7 +41,13 @@
     },
     "owner": "magees",
     "plugins": [
-      "expo-video"
+      "expo-video",
+      [
+        "expo-notifications",
+        {
+          "color": "#E50914"
+        }
+      ]
     ]
   }
 }

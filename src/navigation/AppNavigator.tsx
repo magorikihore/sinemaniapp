@@ -23,6 +23,7 @@ import SubscriptionScreen from '../screens/payment/SubscriptionScreen';
 import CoinStoreScreen from '../screens/payment/CoinStoreScreen';
 import PaymentScreen from '../screens/payment/PaymentScreen';
 import DownloadsScreen from '../screens/profile/DownloadsScreen';
+import ReferralScreen from '../screens/profile/ReferralScreen';
 
 export type RootStackParamList = {
     MainTabs: undefined;
@@ -37,6 +38,7 @@ export type RootStackParamList = {
     DailyReward: undefined;
     Subscription: undefined;
     CoinStore: undefined;
+    Referral: undefined;
     Payment: { type: 'subscription' | 'coins'; planId?: number; packageId?: number; amount: number; title: string };
 };
 
@@ -121,6 +123,7 @@ export function AppNavigator() {
             <Stack.Screen name="Subscription" component={SubscriptionScreen} options={{ headerShown: true, title: 'VIP Plans' }} />
             <Stack.Screen name="CoinStore" component={CoinStoreScreen} options={{ headerShown: true, title: 'Coin Store' }} />
             <Stack.Screen name="Payment" component={PaymentScreen} options={{ headerShown: true, title: 'Payment' }} />
+            <Stack.Screen name="Referral" component={ReferralScreen} options={{ headerShown: true, title: 'Invite Friends' }} />
         </Stack.Navigator>
     );
 }
