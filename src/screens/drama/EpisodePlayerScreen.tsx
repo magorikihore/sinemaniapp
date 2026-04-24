@@ -699,9 +699,15 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         resumePos.current = 0;
         setLocalVideoUri(null);
         preloadedVideoUrlRef.current = null;
-        // Keep loading true so spinner shows briefly until new video is ready
+        // Show loading overlay over the (still-mounted) VideoStage while the
+        // new episode is fetched. We deliberately do NOT setEpisode(null)
+        // here — that would unmount the entire JSX tree (including the
+        // persistent VideoPlayer), causing iOS to destroy the AVPlayer and
+        // create a new one. The brief overlap of two AVPlayers competing for
+        // the audio session is the root cause of the "black screen + no
+        // sound on next episode" bug. Keeping the player alive lets
+        // replaceAsync swap the source cleanly when the new URL arrives.
         setLoading(true);
-        setEpisode(null);
         setCurrentEpisodeId(newEpisodeId);
     }, []);
 
