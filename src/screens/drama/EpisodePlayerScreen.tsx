@@ -3,6 +3,7 @@ import {
     View, Text, StyleSheet, TouchableOpacity, TouchableWithoutFeedback,
     Dimensions, ActivityIndicator, StatusBar, Animated, Share, Platform,
     Modal, FlatList, ScrollView, PanResponder, GestureResponderEvent, AppState,
+    Easing,
 } from 'react-native';
 import { useVideoPlayer, VideoView, VideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
@@ -620,34 +621,36 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
 
                 const didSwipe = Math.abs(gs.dy) > swipeThreshold && Math.abs(gs.vy) > 0.15;
                 if (didSwipe && gs.dy < -swipeThreshold) {
-                    // Swipe up → next episode (slide out up, then snap back
-                    // BEFORE switching so the new VideoView mounts on-screen)
+                    // Swipe up → next episode. Soft cubic-out easing for a
+                    // natural TikTok-like glide instead of a hard linear slide.
                     Animated.timing(swipeTranslateY, {
                         toValue: -SCREEN_H,
-                        duration: 250,
+                        duration: 360,
+                        easing: Easing.out(Easing.cubic),
                         useNativeDriver: true,
                     }).start(() => {
                         // Reset position FIRST so the next VideoStage mounts
                         // at translateY=0 and iOS attaches its native layer
                         // to a visible, on-screen view.
                         swipeTranslateY.setValue(0);
-                        // Defer the episode switch to the next frame to ensure
-                        // the layout has been applied before remount.
-                        requestAnimationFrame(() => {
+                        // Small delay so the snap-back settles visually before
+                        // the new episode begins loading.
+                        setTimeout(() => {
                             try { nextEpisodeRef.current(); } catch {}
-                        });
+                        }, 60);
                     });
                 } else if (didSwipe && gs.dy > swipeThreshold) {
                     // Swipe down → previous episode
                     Animated.timing(swipeTranslateY, {
                         toValue: SCREEN_H,
-                        duration: 250,
+                        duration: 360,
+                        easing: Easing.out(Easing.cubic),
                         useNativeDriver: true,
                     }).start(() => {
                         swipeTranslateY.setValue(0);
-                        requestAnimationFrame(() => {
+                        setTimeout(() => {
                             try { prevEpisodeRef.current(); } catch {}
-                        });
+                        }, 60);
                     });
                 } else {
                     // Snap back
@@ -1756,19 +1759,48 @@ function VideoStage({
                 allowsPictureInPicture={false}
                 onFirstFrameRender={onFirstFrame}
             />
-            {loading && posterUri && (
-                <View pointerEvents="none" style={styles.posterOverlay}>
-                    <Image
-                        source={{ uri: posterUri }}
-                        style={StyleSheet.absoluteFill}
-                        contentFit="cover"
-                        transition={150}
-                    />
-                    <View style={styles.posterDim} />
-                </View>
-            )}
+            <PosterFader visible={loading} posterUri={posterUri} />
             {loading && <LoadingBar />}
         </>
+    );
+}
+
+// Cross-fades the episode poster over the video. When `visible` flips to false
+// (first frame ready), the poster fades out smoothly instead of disappearing,
+// giving a soft transition between episodes.
+function PosterFader({ visible, posterUri }: { visible: boolean; posterUri: string | null }) {
+    const opacity = useRef(new Animated.Value(visible ? 1 : 0)).current;
+    const [mounted, setMounted] = useState(visible);
+    useEffect(() => {
+        if (visible) {
+            setMounted(true);
+            Animated.timing(opacity, {
+                toValue: 1,
+                duration: 120,
+                useNativeDriver: true,
+            }).start();
+        } else {
+            Animated.timing(opacity, {
+                toValue: 0,
+                duration: 320,
+                easing: Easing.out(Easing.quad),
+                useNativeDriver: true,
+            }).start(({ finished }) => {
+                if (finished) setMounted(false);
+            });
+        }
+    }, [visible, opacity]);
+    if (!mounted || !posterUri) return null;
+    return (
+        <Animated.View pointerEvents="none" style={[styles.posterOverlay, { opacity }]}>
+            <Image
+                source={{ uri: posterUri }}
+                style={StyleSheet.absoluteFill}
+                contentFit="cover"
+                transition={150}
+            />
+            <View style={styles.posterDim} />
+        </Animated.View>
     );
 }
 
