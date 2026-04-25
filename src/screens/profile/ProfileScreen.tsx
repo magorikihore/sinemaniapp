@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SPACING, STORAGE_URL } from '../../constants/config';
 import { showAlert } from '../../components/AppAlert';
+import RegisterReminderBanner from '../../components/RegisterReminderBanner';
 import { useAuthStore } from '../../store/authStore';
 import {
     coinService, subscriptionService, notificationService,
@@ -92,6 +93,9 @@ export default function ProfileScreen({ navigation }: Props) {
                     </TouchableOpacity>
                 )}
             </View>
+
+            {/* Sign-up reminder for guests */}
+            <RegisterReminderBanner />
 
             {/* Stats Cards */}
             <View style={styles.statsRow}>

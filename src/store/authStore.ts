@@ -12,7 +12,8 @@ interface AuthState {
     isLoading: boolean;
     setUser: (user: User | null) => void;
     login: (email: string, password: string) => Promise<void>;
-    register: (name: string, email: string, password: string) => Promise<void>;
+    register: (name: string, email: string, password: string) => Promise<{ converted: boolean; bonusCoins: number }>;
+    socialLogin: (data: { provider: string; token: string; name?: string; email?: string }) => Promise<void>;
     logout: () => Promise<void>;
     checkAuth: () => Promise<void>;
     refreshUser: () => Promise<void>;
@@ -50,14 +51,33 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     },
 
     register: async (name, email, password) => {
-        const data = await authService.register({
-            name,
-            email,
-            password,
-            password_confirmation: password,
-        });
+        const isGuest = get().isGuest;
+        let user: User;
+        let bonusCoins = 0;
+        if (isGuest) {
+            // Upgrade existing guest account — keeps coins, watchlist, history
+            const res = await authService.convertGuest({
+                name, email, password,
+                password_confirmation: password,
+            });
+            user = res.user as User;
+            bonusCoins = res.bonus_coins || 0;
+        } else {
+            const data = await authService.register({
+                name, email, password,
+                password_confirmation: password,
+            });
+            user = data.user as User;
+        }
         await storage.setItem('is_guest', 'false');
-        set({ user: data.user, isLoggedIn: true, isGuest: false });
+        set({ user, isLoggedIn: true, isGuest: false });
+        return { converted: isGuest, bonusCoins };
+    },
+
+    socialLogin: async (data) => {
+        const res = await authService.socialLogin(data);
+        await storage.setItem('is_guest', 'false');
+        set({ user: res.user, isLoggedIn: true, isGuest: false });
     },
 
     logout: async () => {

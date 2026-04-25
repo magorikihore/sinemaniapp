@@ -574,7 +574,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
 
     // ── Vertical swipe to navigate episodes ──
     const [swipeHint, setSwipeHint] = useState<'up' | 'down' | null>(null);
-    const swipeThreshold = SCREEN_H * 0.10; // 10% of screen to trigger
+    const swipeThreshold = SCREEN_H * 0.07; // 7% of screen to trigger
     const isSwipingRef = useRef(false);
     const isSwitchingRef = useRef(false); // Prevent double episode switch
     // Refs to avoid stale closures in PanResponder
@@ -590,7 +590,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         PanResponder.create({
             onStartShouldSetPanResponder: () => true,
             onMoveShouldSetPanResponder: (_e, gs) => {
-                return Math.abs(gs.dy) > 10 && Math.abs(gs.dy) > Math.abs(gs.dx) * 1.5;
+                return Math.abs(gs.dy) > 10 && Math.abs(gs.dy) > Math.abs(gs.dx) * 1.2;
             },
             onStartShouldSetPanResponderCapture: () => false,
             onMoveShouldSetPanResponderCapture: () => false,
@@ -619,7 +619,9 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                     return;
                 }
 
-                const didSwipe = Math.abs(gs.dy) > swipeThreshold && Math.abs(gs.vy) > 0.15;
+                const verticalDistance = Math.abs(gs.dy);
+                const horizontalDistance = Math.abs(gs.dx);
+                const didSwipe = verticalDistance > swipeThreshold && verticalDistance > horizontalDistance * 1.15;
                 if (didSwipe && gs.dy < -swipeThreshold) {
                     // Swipe up → next episode. Soft cubic-out easing for a
                     // natural TikTok-like glide instead of a hard linear slide.

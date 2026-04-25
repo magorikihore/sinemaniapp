@@ -7,6 +7,7 @@ import {
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING, STORAGE_URL } from '../../constants/config';
+import RegisterReminderBanner from '../../components/RegisterReminderBanner';
 import { contentService } from '../../services/contentService';
 import { Drama, Category } from '../../types';
 import ContinueWatchingPill, { LastWatched } from '../../components/ContinueWatchingPill';
@@ -287,6 +288,9 @@ export default function DiscoverScreen({ navigation }: Props) {
     /* ── render ──────────────────────────────────────── */
     return (
         <View style={styles.container}>
+            {/* Sign-up reminder for guests (auto-hides for logged-in users) */}
+            <RegisterReminderBanner compact />
+
             {/* Search */}
             <View style={styles.searchSection}>
                 <View style={styles.searchBar}>

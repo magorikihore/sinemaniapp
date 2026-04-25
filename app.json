@@ -42,6 +42,7 @@
     "owner": "magees",
     "plugins": [
       "expo-video",
+      "expo-apple-authentication",
       [
         "expo-notifications",
         {

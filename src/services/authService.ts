@@ -58,6 +58,15 @@ export const authService = {
         return res.data;
     },
 
+    async convertGuest(data: { name: string; email: string; password: string; password_confirmation: string; phone?: string }) {
+        const res = await api.post('/v1/auth/convert-guest', data);
+        if (res.data?.token) {
+            await storage.setItem('auth_token', res.data.token);
+            await storage.setItem('user', JSON.stringify(res.data.user));
+        }
+        return res.data as { message: string; bonus_coins: number; user: User; token: string };
+    },
+
     async getStoredUser(): Promise<User | null> {
         const json = await storage.getItem('user');
         return json ? JSON.parse(json) : null;
