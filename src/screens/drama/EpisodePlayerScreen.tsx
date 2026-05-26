@@ -66,6 +66,8 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     }, []);
 
     const [currentEpisodeId, setCurrentEpisodeId] = useState<number | null>(initialEpisodeId || null);
+    const currentEpisodeIdRef = useRef<number | null>(initialEpisodeId || null);
+    const episodeRequestSeqRef = useRef(0);
     const [episode, setEpisode] = useState<Episode | null>(null);
     const [loading, setLoading] = useState(true);
     const [locked, setLocked] = useState(false);
@@ -272,6 +274,10 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     const [showSeriesComplete, setShowSeriesComplete] = useState(false);
     const [seriesCompleteData, setSeriesCompleteData] = useState<any>(null);
 
+    useEffect(() => {
+        currentEpisodeIdRef.current = currentEpisodeId;
+    }, [currentEpisodeId]);
+
     // Fetch drama data (episodes + info), and auto-pick first episode if none specified
     const fetchDramaData = useCallback(async () => {
         if (!dramaId) {
@@ -322,15 +328,24 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
 
     const fetchEpisode = useCallback(async () => {
         if (!currentEpisodeId) return;
+        const requestedEpisodeId = currentEpisodeId;
+        const requestSeq = ++episodeRequestSeqRef.current;
         try {
             // Use prefetched data if available, otherwise fetch from API
             let ep: Episode;
-            if (prefetchedEpisodeRef.current?.id === currentEpisodeId) {
+            if (prefetchedEpisodeRef.current?.id === requestedEpisodeId) {
                 ep = prefetchedEpisodeRef.current;
                 prefetchedEpisodeRef.current = null;
             } else {
-                const res = await episodeService.getEpisode(currentEpisodeId);
+                const res = await episodeService.getEpisode(requestedEpisodeId);
                 ep = res.data;
+            }
+            // Ignore stale responses that arrive after user switched again.
+            if (
+                requestSeq !== episodeRequestSeqRef.current ||
+                requestedEpisodeId !== currentEpisodeIdRef.current
+            ) {
+                return;
             }
             setEpisode(ep);
             const isLocked = !ep.is_free && !ep.is_unlocked;
@@ -342,10 +357,16 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
             // to prevent a brief "Video not available" flash during the transition.
             if (isLocked) setLoading(false);
         } catch (err) {
+            if (
+                requestSeq !== episodeRequestSeqRef.current ||
+                requestedEpisodeId !== currentEpisodeIdRef.current
+            ) {
+                return;
+            }
             // Offline fallback: if we have a local URI, create a minimal episode object
             if (offlineLocalUri) {
                 const stubEpisode: Episode = {
-                    id: currentEpisodeId,
+                    id: requestedEpisodeId,
                     drama_id: dramaId,
                     title: offlineTitle || 'Downloaded Episode',
                     slug: '',
@@ -372,7 +393,12 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                 navigation.goBack();
             }
         } finally {
-            isSwitchingRef.current = false;
+            if (
+                requestSeq === episodeRequestSeqRef.current &&
+                requestedEpisodeId === currentEpisodeIdRef.current
+            ) {
+                isSwitchingRef.current = false;
+            }
         }
     }, [currentEpisodeId, offlineLocalUri, offlineTitle, offlineEpisodeNumber]);
 
