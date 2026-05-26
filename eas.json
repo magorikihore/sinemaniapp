@@ -23,15 +23,25 @@
         "production": {
             "autoIncrement": true,
             "android": {
-                "buildType": "app-bundle"
+                "buildType": "app-bundle",
+                "gradleCommand": ":app:bundleRelease"
             },
             "ios": {
                 "image": "macos-sequoia-15.6-xcode-26.1"
+            },
+            "env": {
+                "EXPO_PUBLIC_API_BASE_URL": "https://api.sinemani.net/api",
+                "EXPO_PUBLIC_STORAGE_URL": "https://api.sinemani.net/storage",
+                "EXPO_PUBLIC_SENTRY_DSN": ""
             }
         }
     },
     "submit": {
         "production": {
+            "android": {
+                "track": "internal",
+                "releaseStatus": "draft"
+            },
             "ios": {
                 "ascAppId": "6763335960",
                 "appleTeamId": "GB8B46629H"

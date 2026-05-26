@@ -1,6 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
+import * as Sentry from '@sentry/react-native';
+
+Sentry.init({
+    dsn: process.env.EXPO_PUBLIC_SENTRY_DSN ?? '',
+    enabled: !!process.env.EXPO_PUBLIC_SENTRY_DSN && !__DEV__,
+    tracesSampleRate: 0.1,
+    enableAutoSessionTracking: true,
+    sendDefaultPii: false,
+});
 
 // ─── Global font scale: bump every fontSize/lineHeight by 15% for better readability ───
 const FONT_SCALE = 1.15;
@@ -43,7 +52,7 @@ const DarkTheme = {
   },
 };
 
-export default function App() {
+export default Sentry.wrap(function App() {
   const { isLoading, checkAuth, isLoggedIn } = useAuthStore();
   const [ready, setReady] = useState(false);
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
@@ -133,7 +142,7 @@ export default function App() {
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
-}
+});
 
 const styles = StyleSheet.create({
   splash: {

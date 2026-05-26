@@ -1,5 +1,7 @@
-export const API_BASE_URL = 'https://api.sinemani.net/api';
-export const STORAGE_URL = 'https://api.sinemani.net/storage';
+export const API_BASE_URL =
+    process.env.EXPO_PUBLIC_API_BASE_URL ?? 'https://api.sinemani.net/api';
+export const STORAGE_URL =
+    process.env.EXPO_PUBLIC_STORAGE_URL ?? 'https://api.sinemani.net/storage';
 
 export const APP_NAME = 'Sinemani';
 export const APP_VERSION = '1.0.0';
