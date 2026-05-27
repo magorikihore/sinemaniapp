@@ -26,7 +26,6 @@
     "android": {
       "package": "com.sinemani.app",
       "versionCode": 2,
-      "edgeToEdgeEnabled": true,
       "adaptiveIcon": {
         "backgroundColor": "#0A0A0A",
         "foregroundImage": "./assets/android-icon-foreground.png",
