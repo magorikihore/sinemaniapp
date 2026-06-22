@@ -4,6 +4,7 @@ import {
     KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../../constants/config';
 import { showAlert } from '../../components/AppAlert';
@@ -107,7 +108,11 @@ export default function RegisterScreen({ navigation }: Props) {
         <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
                 <View style={styles.header}>
-                    <Text style={styles.title}>Create Account</Text>
+                    <Image
+                        source={require('../../../assets/splash.png')}
+                        style={styles.logo}
+                        contentFit="contain"
+                    />
                     <Text style={styles.subtitle}>Join Sinemani and start watching</Text>
                 </View>
 
@@ -215,8 +220,8 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.background },
     scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg },
     header: { alignItems: 'center', marginBottom: SPACING.xl },
-    title: { fontSize: 28, fontWeight: 'bold', color: COLORS.text },
-    subtitle: { fontSize: 14, color: COLORS.textSecondary, marginTop: 4 },
+    logo: { width: 220, height: 240 },
+    subtitle: { fontSize: 14, color: COLORS.textSecondary, marginTop: SPACING.sm, textAlign: 'center' },
     form: { width: '100%' },
     label: { color: COLORS.textSecondary, fontSize: 13, marginBottom: 6, marginTop: SPACING.md },
     input: {

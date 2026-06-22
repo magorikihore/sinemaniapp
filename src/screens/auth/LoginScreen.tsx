@@ -4,6 +4,7 @@ import {
     KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator,
 } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../../constants/config';
 import { showAlert } from '../../components/AppAlert';
@@ -78,8 +79,11 @@ export default function LoginScreen({ navigation }: Props) {
         <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
                 <View style={styles.logoBox}>
-                    <Text style={styles.logoText}>🎬</Text>
-                    <Text style={styles.appName}>Sinemani</Text>
+                    <Image
+                        source={require('../../../assets/splash.png')}
+                        style={styles.logo}
+                        contentFit="contain"
+                    />
                     <Text style={styles.tagline}>Unlimited Short Dramas</Text>
                 </View>
 
@@ -167,9 +171,8 @@ const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: COLORS.background },
     scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: SPACING.lg },
     logoBox: { alignItems: 'center', marginBottom: SPACING.xl },
-    logoText: { fontSize: 64 },
-    appName: { fontSize: 32, fontWeight: 'bold', color: COLORS.text, marginTop: SPACING.sm },
-    tagline: { fontSize: 14, color: COLORS.textSecondary, marginTop: 4 },
+    logo: { width: 220, height: 240 },
+    tagline: { fontSize: 14, color: COLORS.textSecondary, marginTop: SPACING.sm },
     form: { width: '100%' },
     label: { color: COLORS.textSecondary, fontSize: 13, marginBottom: 6, marginTop: SPACING.md },
     input: {
