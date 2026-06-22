@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../../constants/config';
 import { showAlert } from '../../components/AppAlert';
 import { useAuthStore } from '../../store/authStore';
-import { authService } from '../../services/authService';
+import { FieldErrors, validateRegister } from '../../utils/authValidation';
 
 interface Props {
     navigation: any;
@@ -19,23 +19,29 @@ export default function RegisterScreen({ navigation }: Props) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [errors, setErrors] = useState<FieldErrors>({});
     const [loading, setLoading] = useState(false);
     const register = useAuthStore((s) => s.register);
     const socialLogin = useAuthStore((s) => s.socialLogin);
 
+    const goToAppAfterAuth = () => {
+        navigation.reset({
+            index: 0,
+            routes: [{ name: 'MainTabs' }],
+        });
+    };
+
+    const clearError = (field: keyof FieldErrors) => {
+        if (errors[field]) {
+            setErrors((prev) => ({ ...prev, [field]: undefined }));
+        }
+    };
+
     const handleRegister = async () => {
-        if (!name.trim() || !email.trim() || !password.trim()) {
-            showAlert('Error', 'Please fill all fields');
-            return;
-        }
-        if (password !== confirmPassword) {
-            showAlert('Error', 'Passwords do not match');
-            return;
-        }
-        if (password.length < 8) {
-            showAlert('Error', 'Password must be at least 8 characters');
-            return;
-        }
+        const nextErrors = validateRegister(name, email, password, confirmPassword);
+        setErrors(nextErrors);
+        if (Object.keys(nextErrors).length > 0) return;
+
         setLoading(true);
         try {
             const result = await register(name.trim(), email.trim(), password, confirmPassword);
@@ -44,11 +50,20 @@ export default function RegisterScreen({ navigation }: Props) {
             } else if (result?.bonusCoins > 0) {
                 showAlert('Welcome!', `You earned ${result.bonusCoins} bonus coins!`);
             }
+            goToAppAfterAuth();
         } catch (err: any) {
-            const errors = err.response?.data?.errors;
-            if (errors) {
-                const msg = Object.values(errors).flat().join('\n');
-                showAlert('Registration Failed', msg);
+            const apiErrors = err.response?.data?.errors;
+            if (apiErrors) {
+                const fieldErrors: FieldErrors = {};
+                for (const [key, messages] of Object.entries(apiErrors)) {
+                    const list = Array.isArray(messages) ? messages : [String(messages)];
+                    if (list[0]) fieldErrors[key] = String(list[0]);
+                }
+                if (Object.keys(fieldErrors).length > 0) {
+                    setErrors((prev) => ({ ...prev, ...fieldErrors }));
+                } else {
+                    showAlert('Registration Failed', Object.values(apiErrors).flat().join('\n'));
+                }
             } else {
                 showAlert('Error', err.response?.data?.message || 'Registration failed');
             }
@@ -76,6 +91,7 @@ export default function RegisterScreen({ navigation }: Props) {
                 return;
             }
             await socialLogin({ provider: 'apple', token: identityToken, name: credential.fullName?.givenName, email: credential.email });
+            goToAppAfterAuth();
         } catch (err: any) {
             if (err.code === 'ERR_CANCELED') {
                 // User cancelled
@@ -98,45 +114,61 @@ export default function RegisterScreen({ navigation }: Props) {
                 <View style={styles.form}>
                     <Text style={styles.label}>Full Name</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, errors.name && styles.inputError]}
                         value={name}
-                        onChangeText={setName}
+                        onChangeText={(value) => {
+                            setName(value);
+                            clearError('name');
+                        }}
                         placeholder="Your name"
                         placeholderTextColor={COLORS.textMuted}
                         autoCapitalize="words"
                     />
+                    {errors.name ? <Text style={styles.errorText}>{errors.name}</Text> : null}
 
                     <Text style={styles.label}>Email</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, errors.email && styles.inputError]}
                         value={email}
-                        onChangeText={setEmail}
+                        onChangeText={(value) => {
+                            setEmail(value);
+                            clearError('email');
+                        }}
                         placeholder="you@example.com"
                         placeholderTextColor={COLORS.textMuted}
                         keyboardType="email-address"
                         autoCapitalize="none"
                         autoCorrect={false}
                     />
+                    {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
                     <Text style={styles.label}>Password</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, errors.password && styles.inputError]}
                         value={password}
-                        onChangeText={setPassword}
+                        onChangeText={(value) => {
+                            setPassword(value);
+                            clearError('password');
+                        }}
                         placeholder="Min 8 characters"
                         placeholderTextColor={COLORS.textMuted}
                         secureTextEntry
                     />
+                    {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
 
                     <Text style={styles.label}>Confirm Password</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, errors.confirmPassword && styles.inputError]}
                         value={confirmPassword}
-                        onChangeText={setConfirmPassword}
+                        onChangeText={(value) => {
+                            setConfirmPassword(value);
+                            clearError('confirmPassword');
+                        }}
                         placeholder="Repeat password"
                         placeholderTextColor={COLORS.textMuted}
                         secureTextEntry
                     />
+                    {errors.confirmPassword ? <Text style={styles.errorText}>{errors.confirmPassword}</Text> : null}
 
                     <TouchableOpacity
                         style={[styles.btn, loading && styles.btnDisabled]}
@@ -191,6 +223,8 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.surfaceLight, borderRadius: 10, paddingHorizontal: SPACING.md,
         paddingVertical: 14, color: COLORS.text, fontSize: 16, borderWidth: 1, borderColor: COLORS.border,
     },
+    inputError: { borderColor: COLORS.error },
+    errorText: { color: COLORS.error, fontSize: 12, marginTop: 6 },
     btn: {
         backgroundColor: COLORS.primary, borderRadius: 10, paddingVertical: 16,
         alignItems: 'center', marginTop: SPACING.lg,

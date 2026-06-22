@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SPACING } from '../../constants/config';
 import { showAlert } from '../../components/AppAlert';
 import { useAuthStore } from '../../store/authStore';
-import { authService } from '../../services/authService';
+import { FieldErrors, validateLogin } from '../../utils/authValidation';
 
 interface Props {
     navigation: any;
@@ -17,15 +17,22 @@ interface Props {
 export default function LoginScreen({ navigation }: Props) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [errors, setErrors] = useState<FieldErrors>({});
     const [loading, setLoading] = useState(false);
     const login = useAuthStore((s) => s.login);
     const socialLogin = useAuthStore((s) => s.socialLogin);
 
-    const handleLogin = async () => {
-        if (!email.trim() || !password.trim()) {
-            showAlert('Error', 'Please enter email and password');
-            return;
+    const clearError = (field: keyof FieldErrors) => {
+        if (errors[field]) {
+            setErrors((prev) => ({ ...prev, [field]: undefined }));
         }
+    };
+
+    const handleLogin = async () => {
+        const nextErrors = validateLogin(email, password);
+        setErrors(nextErrors);
+        if (Object.keys(nextErrors).length > 0) return;
+
         setLoading(true);
         try {
             await login(email.trim(), password);
@@ -70,36 +77,42 @@ export default function LoginScreen({ navigation }: Props) {
     return (
         <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-                {/* Logo */}
                 <View style={styles.logoBox}>
                     <Text style={styles.logoText}>🎬</Text>
                     <Text style={styles.appName}>Sinemani</Text>
                     <Text style={styles.tagline}>Unlimited Short Dramas</Text>
                 </View>
 
-                {/* Form */}
                 <View style={styles.form}>
                     <Text style={styles.label}>Email</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, errors.email && styles.inputError]}
                         value={email}
-                        onChangeText={setEmail}
+                        onChangeText={(value) => {
+                            setEmail(value);
+                            clearError('email');
+                        }}
                         placeholder="you@example.com"
                         placeholderTextColor={COLORS.textMuted}
                         keyboardType="email-address"
                         autoCapitalize="none"
                         autoCorrect={false}
                     />
+                    {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
                     <Text style={styles.label}>Password</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, errors.password && styles.inputError]}
                         value={password}
-                        onChangeText={setPassword}
+                        onChangeText={(value) => {
+                            setPassword(value);
+                            clearError('password');
+                        }}
                         placeholder="Enter your password"
                         placeholderTextColor={COLORS.textMuted}
                         secureTextEntry
                     />
+                    {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
 
                     <TouchableOpacity
                         style={[styles.btn, loading && styles.btnDisabled]}
@@ -163,6 +176,8 @@ const styles = StyleSheet.create({
         backgroundColor: COLORS.surfaceLight, borderRadius: 10, paddingHorizontal: SPACING.md,
         paddingVertical: 14, color: COLORS.text, fontSize: 16, borderWidth: 1, borderColor: COLORS.border,
     },
+    inputError: { borderColor: COLORS.error },
+    errorText: { color: COLORS.error, fontSize: 12, marginTop: 6 },
     btn: {
         backgroundColor: COLORS.primary, borderRadius: 10, paddingVertical: 16,
         alignItems: 'center', marginTop: SPACING.lg,

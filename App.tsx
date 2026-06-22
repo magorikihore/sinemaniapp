@@ -1,7 +1,10 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator, StyleSheet, Text } from 'react-native';
+import { StyleSheet, Text } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 import * as Sentry from '@sentry/react-native';
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
 
 Sentry.init({
     dsn: process.env.EXPO_PUBLIC_SENTRY_DSN ?? '',
@@ -57,9 +60,21 @@ export default Sentry.wrap(function App() {
   const [ready, setReady] = useState(false);
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
 
+  const onLayoutRootView = useCallback(async () => {
+    if (ready && !isLoading) {
+      await SplashScreen.hideAsync();
+    }
+  }, [ready, isLoading]);
+
   useEffect(() => {
     checkAuth().finally(() => setReady(true));
   }, []);
+
+  useEffect(() => {
+    if (ready && !isLoading) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [ready, isLoading]);
 
   // Set up push notifications after auth is ready
   useEffect(() => {
@@ -123,32 +138,19 @@ export default Sentry.wrap(function App() {
   }, []);
 
   if (!ready || isLoading) {
-    return (
-      <View style={styles.splash}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
+    return null;
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView style={{ flex: 1 }} onLayout={onLayoutRootView}>
       <SafeAreaProvider>
         <NavigationContainer theme={DarkTheme} ref={navigationRef}>
           <StatusBar style="light" />
           <AppNavigator />
-          <AppAlert />
           <PromoPopup navigation={navigationRef.current} />
         </NavigationContainer>
+        <AppAlert />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
-});
-
-const styles = StyleSheet.create({
-  splash: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
 });
