@@ -24,6 +24,8 @@ export function resolveStreamUrl(path: string | null | undefined): string | null
     return `${base}/${path.replace(/^\//, '')}`;
 }
 
+/** Resolve a relative storage path or absolute URL to a secure HTTPS media URL. */
+export function resolveMediaUrl(
     path: string | null | undefined,
     fallback: string = PLACEHOLDER,
 ): string {
