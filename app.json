@@ -2,7 +2,7 @@
   "expo": {
     "name": "Sinemani",
     "slug": "SinemaniApp",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -25,7 +25,6 @@
     },
     "android": {
       "package": "com.sinemani.app",
-      "versionCode": 2,
       "adaptiveIcon": {
         "backgroundColor": "#F8B11B",
         "foregroundImage": "./assets/android-icon-foreground.png",

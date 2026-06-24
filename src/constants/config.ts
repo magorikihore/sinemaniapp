@@ -13,7 +13,7 @@ export const STORAGE_URL = ensureHttpsBase(
 );
 
 export const APP_NAME = 'Sinemani';
-export const APP_VERSION = '1.0.0';
+export const APP_VERSION = '1.0.1';
 
 export const COLORS = {
     primary: '#E50914',
