@@ -9,6 +9,7 @@ import { useVideoPlayer, VideoView, VideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { COLORS, SPACING, STORAGE_URL } from '../../constants/config';
+import { resolveMediaUrl, resolveStreamUrl, ensureHttps } from '../../utils/mediaUrl';
 import { showAlert } from '../../components/AppAlert';
 import { contentService, episodeService, watchlistService, interactionService } from '../../services/contentService';
 import { Episode } from '../../types';
@@ -420,7 +421,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
             const isLocked = !ep.is_free && !ep.is_unlocked;
             if (isLocked) return;
             const rawUrl = ep.stream_url || ep.video_url || (ep.video_path ? ep.video_path : null);
-            const url = rawUrl ? (rawUrl.startsWith('http') ? rawUrl : `${STORAGE_URL}/${rawUrl}`) : null;
+            const url = resolveStreamUrl(rawUrl);
             if (url && url !== preloadedVideoUrlRef.current) {
                 preloadedVideoUrlRef.current = url;
                 // Warm CDN/HTTP cache with a small range request — Cloudflare
@@ -850,9 +851,10 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         }
 
         // For downloads, prefer the MP4 file (not HLS stream which is just a playlist)
-        const mp4Url = episode.video_url || (episode.video_path ? `${STORAGE_URL}/${episode.video_path}` : null);
-        // Only fall back to stream_url if it's not an HLS playlist
-        const remoteUrl = mp4Url || (episode.stream_url && !episode.stream_url.endsWith('.m3u8') ? episode.stream_url : null);
+        const mp4Url = resolveStreamUrl(episode.video_url) || resolveStreamUrl(episode.video_path ?? null);
+        const remoteUrl = mp4Url || (episode.stream_url && !episode.stream_url.endsWith('.m3u8')
+            ? resolveStreamUrl(episode.stream_url)
+            : null);
         if (!remoteUrl) {
             showAlert('Error', 'No downloadable video available');
             return;
@@ -901,12 +903,12 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
         let newUrl: string;
 
         if (quality === 'Auto') {
-            // Use master playlist — player adapts automatically
-            newUrl = streamUrl.startsWith('http') ? streamUrl : `${STORAGE_URL}/${streamUrl}`;
+            newUrl = resolveStreamUrl(streamUrl) ?? '';
         } else {
             const variant = QUALITY_VARIANT_MAP[quality];
             if (!variant) return;
-            newUrl = `${baseDir.startsWith('http') ? baseDir : `${STORAGE_URL}/${baseDir}`}/${variant}/playlist.m3u8`;
+            const resolvedBase = resolveStreamUrl(baseDir) ?? '';
+            newUrl = `${resolvedBase}/${variant}/playlist.m3u8`;
         }
 
         if (newUrl !== videoUrlRef.current) {
@@ -1014,9 +1016,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
             return;
         }
         const rawUrl = episode.stream_url || episode.video_url || (episode.video_path ? episode.video_path : null);
-        const remote = rawUrl
-            ? (rawUrl.startsWith('http') ? rawUrl : `${STORAGE_URL}/${rawUrl}`)
-            : null;
+        const remote = resolveStreamUrl(rawUrl);
         // Prefer local file (downloaded), then offline URI from nav params, then remote
         const url = localVideoUri || offlineLocalUri || remote;
 
@@ -1050,9 +1050,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
     // not yet rendered). Episode thumbnail is preferred, falls back to drama
     // cover. Built as a full HTTPS URL.
     const posterRaw = episode.thumbnail || dramaCover || null;
-    const posterUri = posterRaw
-        ? (posterRaw.startsWith('http') ? posterRaw : `${STORAGE_URL}/${posterRaw}`)
-        : null;
+    const posterUri = posterRaw ? resolveMediaUrl(posterRaw, '') || null : null;
 
     return (
         <View style={styles.container}>
@@ -1513,7 +1511,7 @@ export default function EpisodePlayerScreen({ navigation, route }: Props) {
                                                         }}
                                                     >
                                                         <Image
-                                                            source={{ uri: poster ? `${STORAGE_URL}/${poster}` : 'https://via.placeholder.com/100x140/1a1a2e/666' }}
+                                                            source={{ uri: resolveMediaUrl(poster) }}
                                                             style={styles.suggestionPoster}
                                                             contentFit="cover"
                                                         />
