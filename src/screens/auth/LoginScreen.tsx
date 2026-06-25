@@ -23,6 +23,13 @@ export default function LoginScreen({ navigation }: Props) {
     const login = useAuthStore((s) => s.login);
     const socialLogin = useAuthStore((s) => s.socialLogin);
 
+    const goToAppAfterAuth = () => {
+        navigation.reset({
+            index: 0,
+            routes: [{ name: 'MainTabs' }],
+        });
+    };
+
     const clearError = (field: keyof FieldErrors) => {
         if (errors[field]) {
             setErrors((prev) => ({ ...prev, [field]: undefined }));
@@ -37,9 +44,23 @@ export default function LoginScreen({ navigation }: Props) {
         setLoading(true);
         try {
             await login(email.trim(), password);
+            goToAppAfterAuth();
         } catch (err: any) {
-            const msg = err.response?.data?.message || 'Login failed. Check your credentials.';
-            showAlert('Login Failed', msg);
+            const apiErrors = err.response?.data?.errors;
+            if (apiErrors) {
+                const fieldErrors: FieldErrors = {};
+                for (const [key, messages] of Object.entries(apiErrors)) {
+                    const list = Array.isArray(messages) ? messages : [String(messages)];
+                    if (list[0]) fieldErrors[key as keyof FieldErrors] = String(list[0]);
+                }
+                if (Object.keys(fieldErrors).length > 0) {
+                    setErrors((prev) => ({ ...prev, ...fieldErrors }));
+                } else {
+                    showAlert('Login Failed', err.response?.data?.message || 'Login failed. Check your credentials.');
+                }
+            } else {
+                showAlert('Login Failed', err.response?.data?.message || 'Login failed. Check your credentials.');
+            }
         } finally {
             setLoading(false);
         }
@@ -64,6 +85,7 @@ export default function LoginScreen({ navigation }: Props) {
                 return;
             }
             await socialLogin({ provider: 'apple', token: identityToken, name: credential.fullName?.givenName, email: credential.email });
+            goToAppAfterAuth();
         } catch (err: any) {
             if (err.code === 'ERR_CANCELED') {
                 // User cancelled
